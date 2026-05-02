@@ -9,12 +9,13 @@ import anthropic
 import click
 from dotenv import load_dotenv
 
-from . import browser, classifier, config, db, notifier, poller, responder, sender
+from . import browser, classifier, config, db, notifier, platforms, responder
+from .platforms.facebook import INBOX_URL as FB_INBOX_URL
 
 
 @click.group()
 def cli():
-    """Facebook Marketplace auto-reply tool."""
+    """Rental Marketplace auto-reply tool."""
     load_dotenv(override=True)
 
 
@@ -35,11 +36,11 @@ def login():
 
 @cli.command()
 def inspect():
-    """Open the Marketplace inbox and pause. Useful for tuning selectors."""
-    cfg = config.load()
+    """Open the FB Marketplace inbox and pause. Useful for tuning selectors."""
+    config.load()
     with browser.context(headless=False) as ctx:
         page = ctx.new_page()
-        page.goto(poller.INBOX_URL)
+        page.goto(FB_INBOX_URL)
         click.echo("Inbox open. Inspect with devtools. Ctrl+C to exit.")
         try:
             while True:
@@ -51,7 +52,7 @@ def inspect():
 @cli.command()
 @click.option("--once", is_flag=True, help="Run one poll cycle and exit.")
 def run(once: bool):
-    """Poll the inbox, draft replies, send or queue per send_mode."""
+    """Poll each enabled platform's inbox and draft / send replies."""
     cfg = config.load()
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise click.ClickException("ANTHROPIC_API_KEY not set (see .env.example)")
@@ -59,10 +60,11 @@ def run(once: bool):
     client = anthropic.Anthropic()
 
     while True:
-        try:
-            _cycle(cfg, client)
-        except Exception as e:
-            click.echo(f"[cycle error] {e}")
+        for platform in platforms.enabled_platforms():
+            try:
+                _cycle(platform, cfg, client)
+            except Exception as e:
+                click.echo(f"[{platform.name} cycle error] {e}")
 
         if once:
             break
@@ -70,9 +72,10 @@ def run(once: bool):
         time.sleep(cfg.poll_interval_seconds)
 
 
-def _cycle(cfg: config.Config, client: anthropic.Anthropic):
+def _cycle(platform: platforms.Platform, cfg: config.Config, client: anthropic.Anthropic):
+    click.echo(f"\n=== {platform.name} cycle ===")
     with db.conn(config.DB_PATH) as c:
-        cycle_id = db.cycle_start(c)
+        cycle_id = db.cycle_start(c, platform=platform.name)
 
     sent = 0
     queued = 0
@@ -82,7 +85,7 @@ def _cycle(cfg: config.Config, client: anthropic.Anthropic):
 
     try:
         with browser.context(headless=False) as ctx, db.conn(config.DB_PATH) as c:
-            inbound_all, threads_scanned = poller.poll_inbox(ctx)
+            inbound_all, threads_scanned = platform.poll_inbox(ctx)
             unread_found = len(inbound_all)
             click.echo(f"found {len(inbound_all)} unread inbound messages")
             inbound = inbound_all[: cfg.cycle_cap]
@@ -98,8 +101,8 @@ def _cycle(cfg: config.Config, client: anthropic.Anthropic):
                 if db.message_seen(c, m.msg_id):
                     continue
 
-                db.upsert_thread(c, m.thread_id, m.listing_title, m.counterparty)
-                db.insert_message(c, m.msg_id, m.thread_id, "in", m.body)
+                db.upsert_thread(c, m.thread_id, m.listing_title, m.counterparty, platform=platform.name)
+                db.insert_message(c, m.msg_id, m.thread_id, "in", m.body, platform=platform.name)
 
                 listing = classifier.match_listing(m.listing_title, cfg.listings)
                 if not listing:
@@ -130,11 +133,11 @@ def _cycle(cfg: config.Config, client: anthropic.Anthropic):
 
                 if auto:
                     try:
-                        sender.open_thread(page, m.thread_id)
-                        sender.send_reply(page, reply, cfg.typing_delay_ms)
+                        platform.open_thread(page, m.thread_id)
+                        platform.send_reply(page, reply, cfg.typing_delay_ms)
                         out_id = f"{m.thread_id}::out::{int(time.time())}"
-                        db.insert_message(c, out_id, m.thread_id, "out", reply)
-                        db.insert_draft(c, m.thread_id, m.msg_id, reply, "sent", reason)
+                        db.insert_message(c, out_id, m.thread_id, "out", reply, platform=platform.name)
+                        db.insert_draft(c, m.thread_id, m.msg_id, reply, "sent", reason, platform=platform.name)
                         sent += 1
                         if viewing:
                             notifier.notify_viewing(viewing, m.thread_id)
@@ -142,16 +145,18 @@ def _cycle(cfg: config.Config, client: anthropic.Anthropic):
                         time.sleep(random.uniform(*cfg.delay_between_replies_seconds))
                     except Exception as e:
                         click.echo(f"  [send error] {e}; queuing instead")
-                        db.insert_draft(c, m.thread_id, m.msg_id, reply, "pending", f"send failed: {e}")
+                        db.insert_draft(
+                            c, m.thread_id, m.msg_id, reply, "pending",
+                            f"send failed: {e}", platform=platform.name,
+                        )
                         queued += 1
                 else:
-                    db.insert_draft(c, m.thread_id, m.msg_id, reply, "pending", reason)
+                    db.insert_draft(c, m.thread_id, m.msg_id, reply, "pending", reason, platform=platform.name)
                     queued += 1
     except Exception as e:
         error_msg = f"{type(e).__name__}: {e}"
         click.echo(f"[cycle error] {error_msg}")
 
-    # Decide overall status and persist cycle summary
     if error_msg:
         status = "failure"
     elif unread_found > 0 and sent == 0 and queued == 0:
@@ -170,15 +175,14 @@ def _cycle(cfg: config.Config, client: anthropic.Anthropic):
             replies_queued=queued,
             error_msg=error_msg,
         )
-        # Session-health: if the last 2 cycles both saw 0 threads on the inbox,
-        # FB has likely logged us out or thrown a security challenge.
-        recent = db.list_cycles(c, limit=2)
+        # Session-health, scoped per platform.
+        recent = db.list_cycles(c, limit=2, platform=platform.name)
         if len(recent) >= 2 and all(r["threads_scanned"] == 0 for r in recent):
-            from . import notifier as _n
-            _n.notify_session_unhealthy(
-                f"Last 2 cycles saw 0 threads (latest status: {recent[0]['status']})"
+            notifier.notify_session_unhealthy(
+                f"{platform.name}: last 2 cycles saw 0 threads "
+                f"(latest status: {recent[0]['status']})"
             )
-            click.echo("⚠️ session unhealthy — notification fired")
+            click.echo(f"⚠️ {platform.name} session unhealthy — notification fired")
 
 
 @cli.command()
@@ -207,13 +211,13 @@ def review():
             click.echo("no pending drafts")
             return
 
-        client = anthropic.Anthropic() if os.getenv("ANTHROPIC_API_KEY") else None
-
         with browser.context(headless=False) as ctx:
             page = ctx.new_page()
             for d in drafts:
+                pname = d["platform"] or "facebook"
+                platform = platforms.get(pname)
                 click.echo("\n" + "=" * 70)
-                click.echo(f"thread: {d['thread_id']}  ({d['counterparty']})")
+                click.echo(f"[{pname}] thread: {d['thread_id']}  ({d['counterparty']})")
                 click.echo(f"reason: {d['reason']}")
                 click.echo(f"draft:\n{d['body']}")
                 action = click.prompt(
@@ -230,12 +234,11 @@ def review():
                 body = d["body"]
                 if action == "e":
                     body = click.edit(body) or body
-                # send
                 try:
-                    sender.open_thread(page, d["thread_id"])
-                    sender.send_reply(page, body, cfg.typing_delay_ms)
+                    platform.open_thread(page, d["thread_id"])
+                    platform.send_reply(page, body, cfg.typing_delay_ms)
                     out_id = f"{d['thread_id']}::out::{int(time.time())}"
-                    db.insert_message(c, out_id, d["thread_id"], "out", body)
+                    db.insert_message(c, out_id, d["thread_id"], "out", body, platform=pname)
                     db.mark_draft(c, d["id"], "sent")
                     click.echo("sent.")
                 except Exception as e:
