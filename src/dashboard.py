@@ -209,10 +209,25 @@ def listings_add():
 # ── History ────────────────────────────────────────────────────────────
 
 @app.get("/history", response_class=HTMLResponse)
-def history_view(request: Request, expand: Optional[int] = None):
+def history_view(
+    request: Request,
+    expand: Optional[int] = None,
+    platform: Optional[str] = None,
+):
     from datetime import datetime
+    known_platforms = list(platforms.REGISTRY.keys())
+    if platform and platform not in known_platforms:
+        platform = None
+
     with db.conn(config.DB_PATH) as c:
-        cycles = [dict(r) for r in db.list_cycles(c, limit=200)]
+        cycles = [
+            dict(r) for r in db.list_cycles(c, limit=200, platform=platform)
+        ]
+        # Per-platform "last run" — for the status banner at top.
+        last_by_platform: dict[str, dict | None] = {}
+        for p in known_platforms:
+            recent = db.list_cycles(c, limit=1, platform=p)
+            last_by_platform[p] = dict(recent[0]) if recent else None
         expanded_drafts = []
         if expand is not None:
             expanded_drafts = [dict(r) for r in db.cycle_drafts(c, expand)]
@@ -237,8 +252,6 @@ def history_view(request: Request, expand: Optional[int] = None):
             mins = delta // 60
             next_run_relative = f"in {mins} min" if mins < 60 else f"in {mins // 60}h {mins % 60}m"
 
-    last_cycle = cycles[0] if cycles else None
-
     return templates.TemplateResponse(
         "history.html",
         {
@@ -248,7 +261,9 @@ def history_view(request: Request, expand: Optional[int] = None):
             "expanded_drafts": expanded_drafts,
             "next_run_human": next_run_human,
             "next_run_relative": next_run_relative,
-            "last_cycle": last_cycle,
+            "last_by_platform": last_by_platform,
+            "known_platforms": known_platforms,
+            "platform_filter": platform,
         },
     )
 
@@ -272,9 +287,25 @@ def history_clear(scope: str = Form("all")):
 @app.get("/config", response_class=HTMLResponse)
 def config_view(request: Request, saved: int = 0):
     raw = yaml.safe_load(CONFIG_PATH.read_text()) or {}
+    # Build per-platform enabled map for the template, falling back to each
+    # platform's code-side default if absent from config.yaml.
+    cfg_platforms = (raw.get("platforms") or {})
+    platform_states = []
+    for name, p in platforms.REGISTRY.items():
+        platform_states.append({
+            "name": name,
+            "enabled": cfg_platforms.get(name, getattr(p, "enabled", True)),
+            "code_default": getattr(p, "enabled", True),
+            "inbox_url": getattr(p, "inbox_url", ""),
+        })
     return templates.TemplateResponse(
         "config.html",
-        {"request": request, "cfg": raw, "saved": bool(saved)},
+        {
+            "request": request,
+            "cfg": raw,
+            "saved": bool(saved),
+            "platform_states": platform_states,
+        },
     )
 
 
@@ -290,6 +321,11 @@ async def config_save(request: Request):
 
     triggers_raw = (form.get("escalation_triggers") or "").strip()
     triggers = [t.strip().lower() for t in triggers_raw.splitlines() if t.strip()]
+
+    # Per-platform enabled toggles. Form sends `platform_<name>` (checkbox).
+    platforms_enabled = {}
+    for name in platforms.REGISTRY.keys():
+        platforms_enabled[name] = form.get(f"platform_{name}") == "on"
 
     new_cfg = {
         "poll_interval_seconds": _ival("poll_interval_seconds", 180),
@@ -311,6 +347,7 @@ async def config_save(request: Request):
             "min_interval_seconds": max(60, _ival("min_interval_seconds", 1200)),
             "max_interval_seconds": max(60, _ival("max_interval_seconds", 3000)),
         },
+        "platforms": platforms_enabled,
     }
     # Sanity: enforce min <= max for the random interval
     sched = new_cfg["schedule"]

@@ -46,6 +46,21 @@
 
 <form method="post" action="/config/save">
 
+  <h2>Platforms</h2>
+  <p class="hint" style="margin-top:0;">Untick to skip a platform on every cycle. Uses the code-side default if not set.</p>
+  {% for p in platform_states %}
+  <div class="field" style="display:flex; align-items:center; gap:0.6rem;">
+    <input type="checkbox" id="p_{{ p.name }}" name="platform_{{ p.name }}"
+           {% if p.enabled %}checked{% endif %}
+           style="width:auto; margin:0;">
+    <label for="p_{{ p.name }}" style="margin:0; font-weight:500;">
+      {{ p.name }}
+      {% if not p.code_default %}<span style="color:#888;font-weight:normal;">(under construction — code default off)</span>{% endif %}
+    </label>
+    <span style="color:#888; font-size:0.8rem; margin-left:auto;">{{ p.inbox_url }}</span>
+  </div>
+  {% endfor %}
+
   <h2>Sending behavior</h2>
 
   <div class="field">

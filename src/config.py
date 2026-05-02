@@ -21,6 +21,8 @@ class Config:
     model: str
     guidelines: str
     listings: list[dict]
+    # Per-platform enable map (e.g. {"facebook": True, "avail": True, "zillow": False})
+    platforms_enabled: dict[str, bool]
 
 
 def load() -> Config:
@@ -41,10 +43,13 @@ def load() -> Config:
     DATA_DIR.mkdir(exist_ok=True)
     PROFILE_DIR.mkdir(exist_ok=True)
 
+    platforms_raw = cfg.get("platforms") or {}
+    platforms_enabled = {k: bool(v) for k, v in platforms_raw.items()}
     return Config(
         poll_interval_seconds=cfg["poll_interval_seconds"],
         send_mode=cfg["send_mode"],
         cycle_cap=int(cfg.get("cycle_cap", 5)),
+        platforms_enabled=platforms_enabled,
         escalation_triggers=[t.lower() for t in cfg["escalation_triggers"]],
         delay_between_replies_seconds=cfg["delay_between_replies_seconds"],
         typing_delay_ms=cfg["typing_delay_ms"],
