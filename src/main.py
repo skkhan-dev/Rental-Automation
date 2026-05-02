@@ -10,7 +10,6 @@ import click
 from dotenv import load_dotenv
 
 from . import browser, classifier, config, db, notifier, platforms, responder
-from .platforms.facebook import INBOX_URL as FB_INBOX_URL
 
 
 @click.group()
@@ -20,13 +19,20 @@ def cli():
 
 
 @cli.command()
-def login():
-    """Open Facebook in a window so you can log in. Cookies persist."""
-    click.echo("Opening Facebook. Log in (and complete 2FA), then close the window.")
+@click.option(
+    "--platform",
+    "platform_name",
+    default="facebook",
+    type=click.Choice(list(platforms.REGISTRY.keys())),
+    help="Which platform to log into",
+)
+def login(platform_name: str):
+    """Open a platform's login page so you can authenticate. Cookies persist."""
+    p = platforms.get(platform_name)
+    click.echo(f"Opening {p.name} login. Log in (handle any challenges), then Ctrl+C in this terminal.")
     with browser.context(headless=False) as ctx:
         page = ctx.new_page()
-        page.goto("https://www.facebook.com/login")
-        click.echo("Press Ctrl+C in this terminal when you're done logging in.")
+        page.goto(p.login_url)
         try:
             while True:
                 time.sleep(2)
@@ -35,18 +41,39 @@ def login():
 
 
 @cli.command()
-def inspect():
-    """Open the FB Marketplace inbox and pause. Useful for tuning selectors."""
+@click.option(
+    "--platform",
+    "platform_name",
+    default="facebook",
+    type=click.Choice(list(platforms.REGISTRY.keys())),
+)
+def inspect(platform_name: str):
+    """Open a platform's inbox and pause. Useful for tuning selectors."""
     config.load()
+    p = platforms.get(platform_name)
     with browser.context(headless=False) as ctx:
         page = ctx.new_page()
-        page.goto(FB_INBOX_URL)
-        click.echo("Inbox open. Inspect with devtools. Ctrl+C to exit.")
+        page.goto(p.inbox_url)
+        click.echo(f"{p.name} inbox open at {p.inbox_url}. Ctrl+C to exit.")
         try:
             while True:
                 time.sleep(5)
         except KeyboardInterrupt:
             pass
+
+
+@cli.command()
+@click.option(
+    "--platform",
+    "platform_name",
+    required=True,
+    type=click.Choice(list(platforms.REGISTRY.keys())),
+)
+def diag(platform_name: str):
+    """Dump a platform's inbox DOM so we can write/fix selectors."""
+    from . import diag as diag_mod
+    p = platforms.get(platform_name)
+    diag_mod.dump_inbox(p)
 
 
 @cli.command()

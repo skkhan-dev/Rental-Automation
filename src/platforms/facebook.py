@@ -87,6 +87,9 @@ class FacebookPlatform:
     """Facebook Marketplace platform implementation."""
 
     name = "facebook"
+    inbox_url = INBOX_URL
+    login_url = "https://www.facebook.com/login"
+    enabled = True
 
     def poll_inbox(self, ctx: BrowserContext) -> tuple[list[InboundMessage], int]:
         page = ctx.new_page()

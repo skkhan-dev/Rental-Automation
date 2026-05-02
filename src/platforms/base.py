@@ -30,10 +30,13 @@ class Platform(Protocol):
 
     Each platform manages its own URL space, DOM selectors, and login flow.
     Authentication state lives in the shared Playwright persistent profile;
-    the user logs in once per platform via `python -m src.main login`.
+    the user logs in once per platform via `python -m src.main login --platform <name>`.
     """
 
-    name: str  # short id: "facebook", "zillow", "avail"
+    name: str        # short id: "facebook", "zillow", "avail"
+    inbox_url: str   # canonical inbox URL (also used by `inspect` and `diag`)
+    login_url: str   # where to send the user for first-time login
+    enabled: bool    # if False, platform is registered but not polled
 
     def poll_inbox(self, ctx: BrowserContext) -> tuple[list[InboundMessage], int]:
         """Return (unread inbound messages, total threads visible on inbox)."""
