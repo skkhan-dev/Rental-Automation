@@ -85,7 +85,10 @@ def send_email(to: str, subject: str, body: str) -> tuple[bool, str]:
     host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     port = int(os.getenv("SMTP_PORT", "587"))
     user = os.getenv("SMTP_USER", "").strip()
-    pwd = os.getenv("SMTP_PASSWORD", "")
+    # Gmail App Passwords display as four groups of 4 chars separated by
+    # spaces (sometimes non-breaking U+00A0). Smtplib wants the raw 16.
+    pwd_raw = os.getenv("SMTP_PASSWORD", "")
+    pwd = "".join(pwd_raw.split()) .replace("\xa0", "")
     from_ = os.getenv("SMTP_FROM", "").strip() or user
     if not (user and pwd):
         return False, "SMTP not configured (set SMTP_USER / SMTP_PASSWORD)"
