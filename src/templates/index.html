@@ -40,6 +40,38 @@
 <h1>Pending drafts</h1>
 <div class="mode">send mode: <b>{{ send_mode }}</b></div>
 
+{% if cleaned %}
+<div style="background:#d4edda; color:#155724; padding:0.5rem 0.85rem; border-radius:4px; margin-bottom:1rem;">
+  ✅ Auto-rejected {{ cleaned }} stale draft{% if cleaned != 1 %}s{% endif %} (thread already had a newer outbound reply).
+</div>
+{% endif %}
+{% if cleared %}
+<div style="background:#fff3cd; color:#664d03; padding:0.5rem 0.85rem; border-radius:4px; margin-bottom:1rem;">
+  Cleared {{ cleared }} pending draft{% if cleared != 1 %}s{% endif %}.
+</div>
+{% endif %}
+
+{% if drafts %}
+<div style="display:flex; gap:0.5rem; margin-bottom:1rem; padding:0.5rem 0.7rem; background:#f5f5f5; border-radius:4px;">
+  <form method="post" action="/drafts/clean-stale" style="display:inline;">
+    <button type="submit" style="font:inherit; padding:0.35rem 0.85rem; border-radius:3px; border:1px solid #ccc; background:#fff; cursor:pointer;"
+            title="Reject pending drafts whose thread already got a newer outbound message">
+      Clean stale (smart)
+    </button>
+  </form>
+  <form method="post" action="/drafts/clear-all-pending"
+        style="display:inline;"
+        onsubmit="return confirm('Reject ALL {{ drafts|length }} pending drafts? This is non-reversible (you can still see them in History).')">
+    <button type="submit" class="reject" style="font:inherit; padding:0.35rem 0.85rem; border-radius:3px; border:1px solid #ccc; background:#fff; cursor:pointer; color:#c33;">
+      Reject all pending ({{ drafts|length }})
+    </button>
+  </form>
+  <span style="color:#888; font-size:0.85rem; align-self:center; margin-left:auto;">
+    Showing only drafts that need your action.
+  </span>
+</div>
+{% endif %}
+
 {% if not drafts %}
   <div class="empty">no pending drafts.</div>
 {% endif %}

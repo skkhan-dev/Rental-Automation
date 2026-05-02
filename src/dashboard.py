@@ -74,7 +74,7 @@ def _reload_config():
 # ── Drafts ─────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
+def index(request: Request, cleaned: int = 0, cleared: int = 0):
     cfg = _config()
     with db.conn(config.DB_PATH) as c:
         drafts = [dict(d) for d in db.pending_drafts(c)]
@@ -84,7 +84,10 @@ def index(request: Request):
             ]
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "drafts": drafts, "send_mode": cfg.send_mode},
+        {
+            "request": request, "drafts": drafts, "send_mode": cfg.send_mode,
+            "cleaned": cleaned, "cleared": cleared,
+        },
     )
 
 
@@ -128,6 +131,43 @@ def save_draft(draft_id: int, body: str = Form(...)):
     with db.conn(config.DB_PATH) as c:
         c.execute("UPDATE drafts SET body=? WHERE id=?", (body, draft_id))
     return RedirectResponse("/", status_code=303)
+
+
+@app.post("/drafts/clean-stale")
+def clean_stale_drafts():
+    """Reject pending drafts whose thread already has a newer outbound
+    message — meaning we already replied through some other path and the
+    queued draft is no longer needed."""
+    with db.conn(config.DB_PATH) as c:
+        rows = c.execute("""
+            SELECT d.id
+            FROM drafts d
+            WHERE d.status = 'pending'
+              AND EXISTS (
+                SELECT 1 FROM messages m
+                WHERE m.thread_id = d.thread_id
+                  AND m.direction = 'out'
+                  AND m.ts > d.created_ts
+              )
+        """).fetchall()
+        ids = [r["id"] for r in rows]
+        for did in ids:
+            db.mark_draft(c, did, "rejected")
+    return RedirectResponse(f"/?cleaned={len(ids)}", status_code=303)
+
+
+@app.post("/drafts/clear-all-pending")
+def clear_all_pending_drafts():
+    """Reject every pending draft. Use when starting fresh after
+    accumulated test data."""
+    with db.conn(config.DB_PATH) as c:
+        rows = c.execute(
+            "SELECT id FROM drafts WHERE status='pending'"
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        for did in ids:
+            db.mark_draft(c, did, "rejected")
+    return RedirectResponse(f"/?cleared={len(ids)}", status_code=303)
 
 
 # ── Listings editor ────────────────────────────────────────────────────
@@ -428,6 +468,14 @@ def appointments_view(request: Request, status: Optional[str] = None):
     with db.conn(config.DB_PATH) as c:
         appts = [dict(r) for r in db.list_appointments(c, status=status_filter)]
         counts = db.status_counts(c)
+        # Pull thread history for each appointment (capped) so the template
+        # can show the full back-and-forth.
+        for a in appts:
+            tid = a.get("thread_id")
+            a["history"] = (
+                [dict(r) for r in db.thread_history(c, tid, limit=50)]
+                if tid else []
+            )
     # Group by when_date
     grouped: dict[str, list[dict]] = {}
     for a in appts:

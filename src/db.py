@@ -278,18 +278,34 @@ def delete_all_cycles(c, only_failures: bool = False):
         c.execute("DELETE FROM cycles")
 
 
-def pending_drafts(c) -> list[sqlite3.Row]:
-    return list(
-        c.execute(
-            """
+def pending_drafts(c, hide_superseded: bool = True) -> list[sqlite3.Row]:
+    """Drafts that need human action.
+
+    By default, hides drafts whose thread already has a newer outbound
+    message — those are stale (we already replied via auto-mode or another
+    draft) and the row in the dashboard is just noise.
+    """
+    if hide_superseded:
+        return list(c.execute("""
             SELECT d.id, d.thread_id, d.platform, d.body, d.reason, d.created_ts,
                    t.counterparty, t.listing_title
-            FROM drafts d JOIN threads t ON t.thread_id=d.thread_id
-            WHERE d.status='pending'
+            FROM drafts d JOIN threads t ON t.thread_id = d.thread_id
+            WHERE d.status = 'pending'
+              AND NOT EXISTS (
+                SELECT 1 FROM messages m
+                WHERE m.thread_id = d.thread_id
+                  AND m.direction = 'out'
+                  AND m.ts > d.created_ts
+              )
             ORDER BY d.created_ts ASC
-            """
-        )
-    )
+        """))
+    return list(c.execute("""
+        SELECT d.id, d.thread_id, d.platform, d.body, d.reason, d.created_ts,
+               t.counterparty, t.listing_title
+        FROM drafts d JOIN threads t ON t.thread_id=d.thread_id
+        WHERE d.status='pending'
+        ORDER BY d.created_ts ASC
+    """))
 
 
 def get_draft(c, draft_id: int) -> sqlite3.Row | None:

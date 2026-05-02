@@ -47,6 +47,16 @@
     padding: 0.4rem 0.55rem; border: 1px solid #ccc; border-radius: 3px;
   }
   details summary { cursor: pointer; color: #06c; font-size: 0.85rem; }
+  .history-pane {
+    margin-top: 0.5rem; padding: 0.5rem 0.75rem;
+    background: #fff; border: 1px solid #eee; border-radius: 3px;
+    max-height: 320px; overflow-y: auto;
+  }
+  .msg { margin: 0.35rem 0; font-size: 0.88rem; }
+  .msg.in  b { color: #0a4; }
+  .msg.out b { color: #06c; }
+  .msg .ts { color: #999; font-size: 0.75rem; margin-left: 0.4rem; }
+  .msg-empty { color: #888; font-style: italic; padding: 0.4rem 0; }
 </style>
 </head>
 <body>
@@ -103,6 +113,23 @@
       <button type="submit" class="primary">Update</button>
     </form>
   </div>
+
+  <details>
+    <summary>Conversation history{% if a.history %} ({{ a.history|length }} messages){% endif %}</summary>
+    <div class="history-pane">
+      {% if a.history %}
+        {% for h in a.history %}
+        <div class="msg {{ h.direction }}">
+          <b>{{ "Tenant" if h.direction == "in" else "Landlord" }}:</b>
+          {{ h.body }}
+          <span class="ts">{{ h.ts | datetimeformat }}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="msg-empty">No messages stored for this thread.</div>
+      {% endif %}
+    </div>
+  </details>
 
   <details class="notes-area" {% if a.notes %}open{% endif %}>
     <summary>{% if a.notes %}Note: <span style="color:#444">{{ a.notes[:60] }}{% if a.notes|length > 60 %}…{% endif %}</span>{% else %}Add note{% endif %}</summary>
