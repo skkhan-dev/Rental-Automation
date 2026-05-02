@@ -14,7 +14,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import browser, config, db, sender
+from . import browser, config, db, platforms
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -93,19 +93,22 @@ def send_draft(draft_id: int, body: str = Form(...)):
     cfg = _config()
     with db.conn(config.DB_PATH) as c:
         row = c.execute(
-            "SELECT thread_id FROM drafts WHERE id=? AND status='pending'", (draft_id,)
+            "SELECT thread_id, platform FROM drafts WHERE id=? AND status='pending'",
+            (draft_id,),
         ).fetchone()
         if not row:
             return RedirectResponse("/", status_code=303)
         thread_id = row["thread_id"]
+        pname = row["platform"] or "facebook"
+        platform = platforms.get(pname)
 
         with browser.context(headless=False) as ctx:
             page = ctx.new_page()
-            sender.open_thread(page, thread_id)
-            sender.send_reply(page, body, cfg.typing_delay_ms)
+            platform.open_thread(page, thread_id)
+            platform.send_reply(page, body, cfg.typing_delay_ms)
 
         out_id = f"{thread_id}::out::{int(time.time())}"
-        db.insert_message(c, out_id, thread_id, "out", body)
+        db.insert_message(c, out_id, thread_id, "out", body, platform=pname)
         c.execute(
             "UPDATE drafts SET body=?, status='sent', decided_ts=? WHERE id=?",
             (body, int(time.time()), draft_id),
