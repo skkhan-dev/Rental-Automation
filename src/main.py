@@ -16,6 +16,35 @@ _DATE_PATTERNS = [
 ]
 
 
+def _auto_notify_owner(c, cfg: "config.Config", appt_id: int) -> None:
+    """Fire owner notifications per config.owner.notify_on_create."""
+    flags = (cfg.owner or {}).get("notify_on_create") or {}
+    if not any(flags.values()):
+        return
+    appt_row = db.get_appointment(c, appt_id)
+    if not appt_row:
+        return
+    appt = dict(appt_row)
+    for channel in ("sms", "email", "call"):
+        if not flags.get(channel):
+            continue
+        ok, detail, target = notifications.dispatch(
+            channel=channel,
+            recipient="owner",
+            appt=appt,
+            owner=cfg.owner,
+        )
+        db.log_notification(
+            c,
+            appointment_id=appt_id,
+            channel=channel,
+            recipient="owner",
+            target=target,
+            status="sent" if ok else "failed",
+            detail=detail,
+        )
+
+
 def _parse_iso_date(s: str | None) -> str | None:
     if not s:
         return None
@@ -43,7 +72,7 @@ import anthropic
 import click
 from dotenv import load_dotenv
 
-from . import browser, classifier, config, db, notifier, platforms, responder
+from . import browser, classifier, config, db, notifications, notifier, platforms, responder
 
 
 @click.group()
@@ -202,8 +231,9 @@ def _cycle(platform: platforms.Platform, cfg: config.Config, client: anthropic.A
                         sent += 1
                         if viewing:
                             notifier.notify_viewing(viewing, m.thread_id)
+                            appt_id = None
                             try:
-                                db.insert_appointment(
+                                appt_id = db.insert_appointment(
                                     c,
                                     platform=platform.name,
                                     thread_id=m.thread_id,
@@ -216,6 +246,10 @@ def _cycle(platform: platforms.Platform, cfg: config.Config, client: anthropic.A
                             except Exception as e:
                                 click.echo(f"  [appt insert error] {e}")
                             click.echo(f"  ⚑ viewing scheduled: {viewing.raw}")
+
+                            # Auto-notify the owner per config.owner.notify_on_create
+                            if appt_id:
+                                _auto_notify_owner(c, cfg, appt_id)
                         time.sleep(random.uniform(*cfg.delay_between_replies_seconds))
                     except Exception as e:
                         click.echo(f"  [send error] {e}; queuing instead")

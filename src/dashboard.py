@@ -14,7 +14,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import browser, config, db, platforms
+from . import browser, config, db, notifications, platforms
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -462,21 +462,26 @@ async def config_save(request: Request):
 # ── Appointments ───────────────────────────────────────────────────────
 
 @app.get("/appointments", response_class=HTMLResponse)
-def appointments_view(request: Request, status: Optional[str] = None):
+def appointments_view(
+    request: Request,
+    status: Optional[str] = None,
+    notified: Optional[str] = None,
+):
+    cfg = _config()
     valid = list(db.APPOINTMENT_STATUSES)
     status_filter = status if status in valid else None
     with db.conn(config.DB_PATH) as c:
         appts = [dict(r) for r in db.list_appointments(c, status=status_filter)]
         counts = db.status_counts(c)
-        # Pull thread history for each appointment (capped) so the template
-        # can show the full back-and-forth.
         for a in appts:
             tid = a.get("thread_id")
             a["history"] = (
                 [dict(r) for r in db.thread_history(c, tid, limit=50)]
                 if tid else []
             )
-    # Group by when_date
+            a["notifs"] = [
+                dict(r) for r in db.appointment_notifications(c, a["id"])
+            ]
     grouped: dict[str, list[dict]] = {}
     for a in appts:
         key = a.get("when_date") or "Unscheduled / TBD"
@@ -490,6 +495,8 @@ def appointments_view(request: Request, status: Optional[str] = None):
             "statuses": valid,
             "status_filter": status_filter,
             "total": sum(counts.values()),
+            "notified": notified,
+            "owner": cfg.owner or {},
         },
     )
 
@@ -509,6 +516,37 @@ def appointments_notes(appt_id: int, notes: str = Form("")):
     with db.conn(config.DB_PATH) as c:
         db.update_appointment_notes(c, appt_id, notes.strip())
     return RedirectResponse("/appointments", status_code=303)
+
+
+@app.post("/appointments/{appt_id}/notify")
+def appointments_notify(
+    appt_id: int,
+    channel: str = Form(...),       # sms | email | call
+    recipient: str = Form(...),     # tenant | owner
+):
+    cfg = _config()
+    with db.conn(config.DB_PATH) as c:
+        appt_row = db.get_appointment(c, appt_id)
+        if not appt_row:
+            return RedirectResponse("/appointments?notified=missing", status_code=303)
+        appt = dict(appt_row)
+        ok, detail, target = notifications.dispatch(
+            channel=channel,
+            recipient=recipient,
+            appt=appt,
+            owner=cfg.owner,
+        )
+        db.log_notification(
+            c,
+            appointment_id=appt_id,
+            channel=channel,
+            recipient=recipient,
+            target=target,
+            status="sent" if ok else "failed",
+            detail=detail,
+        )
+    flag = "ok" if ok else "fail"
+    return RedirectResponse(f"/appointments?notified={flag}", status_code=303)
 
 
 # ── Guidelines editor ──────────────────────────────────────────────────

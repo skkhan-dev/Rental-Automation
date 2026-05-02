@@ -75,6 +75,18 @@ CREATE TABLE IF NOT EXISTS appointments (
 );
 CREATE INDEX IF NOT EXISTS idx_appts_when ON appointments(when_date, created_ts DESC);
 CREATE INDEX IF NOT EXISTS idx_appts_status ON appointments(status, created_ts DESC);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    appointment_id INTEGER REFERENCES appointments(id) ON DELETE CASCADE,
+    channel TEXT NOT NULL CHECK (channel IN ('sms','email','call')),
+    recipient TEXT NOT NULL CHECK (recipient IN ('tenant','owner')),
+    target TEXT,                   -- the actual phone/email used
+    status TEXT NOT NULL CHECK (status IN ('sent','failed')),
+    detail TEXT,
+    created_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notifs_appt ON notifications(appointment_id, created_ts DESC);
 """
 
 APPOINTMENT_STATUSES = (
@@ -386,3 +398,36 @@ def status_counts(c) -> dict[str, int]:
         "SELECT status, COUNT(*) AS n FROM appointments GROUP BY status"
     ).fetchall()
     return {r["status"]: r["n"] for r in rows}
+
+
+def log_notification(
+    c,
+    *,
+    appointment_id: int,
+    channel: str,
+    recipient: str,
+    target: str | None,
+    status: str,
+    detail: str | None = None,
+) -> int:
+    cur = c.execute(
+        """
+        INSERT INTO notifications(appointment_id, channel, recipient, target,
+                                  status, detail, created_ts)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (appointment_id, channel, recipient, target, status, detail, now()),
+    )
+    return cur.lastrowid
+
+
+def appointment_notifications(c, appointment_id: int) -> list[sqlite3.Row]:
+    return list(c.execute(
+        """
+        SELECT id, channel, recipient, target, status, detail, created_ts
+        FROM notifications
+        WHERE appointment_id = ?
+        ORDER BY created_ts DESC
+        """,
+        (appointment_id,),
+    ))

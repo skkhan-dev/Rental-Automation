@@ -23,6 +23,8 @@ class Config:
     listings: list[dict]
     # Per-platform enable map (e.g. {"facebook": True, "avail": True, "zillow": False})
     platforms_enabled: dict[str, bool]
+    # Owner / property manager (for appointment notifications)
+    owner: dict
 
 
 def load() -> Config:
@@ -56,4 +58,5 @@ def load() -> Config:
         model=cfg["model"],
         guidelines=guidelines,
         listings=listings_doc["listings"],
+        owner=cfg.get("owner") or {},
     )

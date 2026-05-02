@@ -57,6 +57,20 @@
   .msg.out b { color: #06c; }
   .msg .ts { color: #999; font-size: 0.75rem; margin-left: 0.4rem; }
   .msg-empty { color: #888; font-style: italic; padding: 0.4rem 0; }
+  .notify-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.4rem; margin-top: 0.5rem;
+  }
+  .notify-grid form button {
+    width: 100%; font: inherit; padding: 0.4rem 0.6rem; font-size: 0.85rem;
+    border-radius: 3px; border: 1px solid #ccc; background: #fff; cursor: pointer;
+  }
+  .notify-grid form button:hover { background: #f5f5f5; }
+  .notify-grid form button.call { color: #c33; }
+  .notif-log { margin-top: 0.4rem; font-size: 0.82rem; }
+  .notif-log .row { padding: 0.2rem 0; color: #555; }
+  .notif-log .row .ok   { color: #2a7d2a; }
+  .notif-log .row .fail { color: #c33; }
 </style>
 </head>
 <body>
@@ -72,6 +86,12 @@
 
 <h1>Appointments</h1>
 <p style="color:#666; margin-top:0;">Created automatically when the AI confirms a viewing in a thread (the <code>[VIEWING_CONFIRMED]</code> marker).</p>
+
+{% if notified == "ok" %}
+<div style="background:#d4edda; color:#155724; padding:0.5rem 0.85rem; border-radius:4px; margin-bottom:1rem;">✅ Notification sent.</div>
+{% elif notified == "fail" %}
+<div style="background:#f8d7da; color:#721c24; padding:0.5rem 0.85rem; border-radius:4px; margin-bottom:1rem;">❌ Notification failed. See the log under the appointment for the reason.</div>
+{% endif %}
 
 <div style="margin-bottom:1rem;">
   <a class="pill {% if not status_filter %}active{% endif %}" href="/appointments">
@@ -113,6 +133,50 @@
       <button type="submit" class="primary">Update</button>
     </form>
   </div>
+
+  <details>
+    <summary>Notify {% if a.notifs %}({{ a.notifs|length }} sent){% endif %}</summary>
+    <div class="notify-grid">
+      {% set tenant_phone = a.phone %}
+      {% set owner_phone = owner.phone %}
+      {% set owner_email = owner.email %}
+      <form method="post" action="/appointments/{{ a.id }}/notify">
+        <input type="hidden" name="channel" value="sms">
+        <input type="hidden" name="recipient" value="tenant">
+        <button type="submit" {% if not tenant_phone %}disabled title="No phone on this appointment"{% endif %}>📱 SMS tenant{% if tenant_phone %}<br><span style="color:#888;font-size:0.75rem">{{ tenant_phone }}</span>{% endif %}</button>
+      </form>
+      <form method="post" action="/appointments/{{ a.id }}/notify">
+        <input type="hidden" name="channel" value="sms">
+        <input type="hidden" name="recipient" value="owner">
+        <button type="submit" {% if not owner_phone %}disabled title="Set owner.phone in config"{% endif %}>📱 SMS owner</button>
+      </form>
+      <form method="post" action="/appointments/{{ a.id }}/notify">
+        <input type="hidden" name="channel" value="email">
+        <input type="hidden" name="recipient" value="owner">
+        <button type="submit" {% if not owner_email %}disabled title="Set owner.email in config"{% endif %}>✉️ Email owner</button>
+      </form>
+      <form method="post" action="/appointments/{{ a.id }}/notify"
+            onsubmit="return confirm('Place a voice call to the owner with the appointment summary?')">
+        <input type="hidden" name="channel" value="call">
+        <input type="hidden" name="recipient" value="owner">
+        <button type="submit" class="call" {% if not owner_phone %}disabled{% endif %}>📞 Call owner</button>
+      </form>
+    </div>
+    {% if a.notifs %}
+    <div class="notif-log">
+      {% for n in a.notifs %}
+      <div class="row">
+        <span class="{% if n.status == 'sent' %}ok{% else %}fail{% endif %}">
+          {{ "✓" if n.status == "sent" else "✗" }}
+        </span>
+        {{ n.channel }} → {{ n.recipient }} ({{ n.target or "—" }})
+        <span style="color:#999;">@ {{ n.created_ts | datetimeformat }}</span>
+        {% if n.detail and n.status == 'failed' %}<br><span style="color:#c33; padding-left:1rem;">{{ n.detail }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </details>
 
   <details>
     <summary>Conversation history{% if a.history %} ({{ a.history|length }} messages){% endif %}</summary>
