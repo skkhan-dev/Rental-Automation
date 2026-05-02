@@ -213,6 +213,8 @@ def history_view(
     request: Request,
     expand: Optional[int] = None,
     platform: Optional[str] = None,
+    started: int = 0,
+    busy: int = 0,
 ):
     from datetime import datetime
     known_platforms = list(platforms.REGISTRY.keys())
@@ -264,6 +266,8 @@ def history_view(
             "last_by_platform": last_by_platform,
             "known_platforms": known_platforms,
             "platform_filter": platform,
+            "started": bool(started),
+            "busy": bool(busy),
         },
     )
 
@@ -273,6 +277,57 @@ def history_delete(cycle_id: int):
     with db.conn(config.DB_PATH) as c:
         db.delete_cycle(c, cycle_id)
     return RedirectResponse("/history", status_code=303)
+
+
+def _another_cycle_running() -> bool:
+    """True if another `src.main run` process is already going.
+    Avoids two concurrent cycles fighting for the persistent browser profile."""
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ["pgrep", "-f", "src.main run"],
+            stderr=subprocess.DEVNULL,
+        ).decode()
+        # Any matching PID other than this dashboard process counts
+        import os
+        my_pid = os.getpid()
+        for line in out.splitlines():
+            try:
+                pid = int(line.strip())
+                if pid != my_pid:
+                    return True
+            except ValueError:
+                pass
+    except subprocess.CalledProcessError:
+        pass  # pgrep returns nonzero when no matches
+    return False
+
+
+@app.post("/history/run-now")
+def history_run_now():
+    """Kick off a cycle in a background subprocess. Returns immediately;
+    output goes to logs/run.log just like launchd's wrapper."""
+    import subprocess
+    import sys
+    if _another_cycle_running():
+        return RedirectResponse("/history?busy=1", status_code=303)
+
+    project_dir = Path(__file__).resolve().parent.parent
+    log_path = project_dir / "logs" / "run.log"
+    log_path.parent.mkdir(exist_ok=True)
+    log_fp = open(log_path, "a")
+    log_fp.write(
+        f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} manual run-now from dashboard ===\n"
+    )
+    log_fp.flush()
+    subprocess.Popen(
+        [sys.executable, "-m", "src.main", "run", "--once"],
+        cwd=str(project_dir),
+        stdout=log_fp,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    return RedirectResponse("/history?started=1", status_code=303)
 
 
 @app.post("/history/clear")

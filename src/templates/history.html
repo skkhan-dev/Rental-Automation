@@ -83,7 +83,23 @@
 </div>
 
 
+{% if started %}
+<div style="background:#d1ecf1; color:#0c5460; padding:0.6rem 0.9rem; border-radius:4px; margin-bottom:1rem;">
+  ▶ Cycle started in the background. Refresh in 1–5 minutes (depends on per-platform pace) to see new rows.
+  Live log: <code>tail -f logs/run.log</code>
+</div>
+{% endif %}
+
+{% if busy %}
+<div style="background:#fff3cd; color:#664d03; padding:0.6rem 0.9rem; border-radius:4px; margin-bottom:1rem;">
+  ⚠ Another cycle is already running (probably launchd). Wait a few minutes and try again.
+</div>
+{% endif %}
+
 <div class="toolbar">
+  <form method="post" action="/history/run-now">
+    <button type="submit" style="background:#06c; color:white; border-color:#06c; font-weight:500;">▶ Run now</button>
+  </form>
   <form method="post" action="/history/clear" onsubmit="return confirm('Delete ALL cycle history? Drafts and messages will not be deleted.')">
     <input type="hidden" name="scope" value="all">
     <button type="submit" class="danger">Delete all</button>
