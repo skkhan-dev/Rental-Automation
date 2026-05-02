@@ -4,12 +4,14 @@ from __future__ import annotations
 from .avail import AvailPlatform
 from .base import InboundMessage, Platform
 from .facebook import FacebookPlatform
+from .zillow import ZillowPlatform
 
 # Every platform that has at least login/diag support — even if its
 # poll_inbox isn't ready. The cycle loop only iterates enabled ones.
 REGISTRY: dict[str, Platform] = {
     "facebook": FacebookPlatform(),
     "avail": AvailPlatform(),
+    "zillow": ZillowPlatform(),
 }
 
 
