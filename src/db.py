@@ -56,7 +56,31 @@ CREATE TABLE IF NOT EXISTS cycles (
 );
 CREATE INDEX IF NOT EXISTS idx_cycles_started ON cycles(started_ts DESC);
 CREATE INDEX IF NOT EXISTS idx_cycles_platform ON cycles(platform, started_ts DESC);
+
+CREATE TABLE IF NOT EXISTS appointments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform TEXT NOT NULL,
+    thread_id TEXT,
+    counterparty TEXT NOT NULL,
+    phone TEXT,
+    listing_title TEXT,
+    when_text TEXT,                 -- raw datetime string from the AI marker
+    when_date TEXT,                 -- ISO date 'YYYY-MM-DD' if parseable
+    status TEXT NOT NULL DEFAULT 'scheduled'
+        CHECK (status IN ('scheduled','confirmed','viewed','interested',
+                          'not_interested','no_show','cancelled')),
+    notes TEXT,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_appts_when ON appointments(when_date, created_ts DESC);
+CREATE INDEX IF NOT EXISTS idx_appts_status ON appointments(status, created_ts DESC);
 """
+
+APPOINTMENT_STATUSES = (
+    "scheduled", "confirmed", "viewed",
+    "interested", "not_interested", "no_show", "cancelled",
+)
 
 
 def _migrate(c: sqlite3.Connection) -> None:
@@ -273,3 +297,76 @@ def get_draft(c, draft_id: int) -> sqlite3.Row | None:
         "SELECT id, thread_id, platform, body, status FROM drafts WHERE id=?",
         (draft_id,),
     ).fetchone()
+
+
+# ── Appointments ────────────────────────────────────────────────────────
+
+def insert_appointment(
+    c,
+    *,
+    platform: str,
+    thread_id: str | None,
+    counterparty: str,
+    phone: str | None,
+    listing_title: str | None,
+    when_text: str | None,
+    when_date: str | None = None,
+) -> int:
+    ts = now()
+    cur = c.execute(
+        """
+        INSERT INTO appointments(
+            platform, thread_id, counterparty, phone, listing_title,
+            when_text, when_date, status, created_ts, updated_ts
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?)
+        """,
+        (platform, thread_id, counterparty, phone, listing_title,
+         when_text, when_date, ts, ts),
+    )
+    return cur.lastrowid
+
+
+def list_appointments(c, status: str | None = None) -> list[sqlite3.Row]:
+    """Upcoming first (ordered by when_date asc, NULLs last), then by id desc."""
+    if status:
+        return list(c.execute(
+            """
+            SELECT * FROM appointments
+            WHERE status=?
+            ORDER BY when_date IS NULL, when_date ASC, id DESC
+            """,
+            (status,),
+        ))
+    return list(c.execute(
+        """
+        SELECT * FROM appointments
+        ORDER BY when_date IS NULL, when_date ASC, id DESC
+        """
+    ))
+
+
+def get_appointment(c, appt_id: int) -> sqlite3.Row | None:
+    return c.execute("SELECT * FROM appointments WHERE id=?", (appt_id,)).fetchone()
+
+
+def update_appointment_status(c, appt_id: int, status: str) -> None:
+    if status not in APPOINTMENT_STATUSES:
+        raise ValueError(f"invalid status: {status}")
+    c.execute(
+        "UPDATE appointments SET status=?, updated_ts=? WHERE id=?",
+        (status, now(), appt_id),
+    )
+
+
+def update_appointment_notes(c, appt_id: int, notes: str) -> None:
+    c.execute(
+        "UPDATE appointments SET notes=?, updated_ts=? WHERE id=?",
+        (notes, now(), appt_id),
+    )
+
+
+def status_counts(c) -> dict[str, int]:
+    rows = c.execute(
+        "SELECT status, COUNT(*) AS n FROM appointments GROUP BY status"
+    ).fetchall()
+    return {r["status"]: r["n"] for r in rows}

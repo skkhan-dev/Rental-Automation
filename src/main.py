@@ -3,7 +3,41 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import time
+from datetime import datetime
+
+
+# Pull a YYYY-MM-DD out of arbitrary date strings the AI may emit
+# ("Sat 5/4 at 6pm", "May 4 6:30 PM", "2026-05-04 18:00", etc.)
+_DATE_PATTERNS = [
+    re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})"),  # ISO
+    re.compile(r"(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?"),  # MM/DD or MM/DD/YYYY
+]
+
+
+def _parse_iso_date(s: str | None) -> str | None:
+    if not s:
+        return None
+    # Try strict ISO first
+    m = _DATE_PATTERNS[0].search(s)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date().isoformat()
+        except Exception:
+            pass
+    # Try MM/DD with current/inferred year
+    m = _DATE_PATTERNS[1].search(s)
+    if m:
+        try:
+            month, day = int(m.group(1)), int(m.group(2))
+            year = int(m.group(3)) if m.group(3) else datetime.now().year
+            if year < 100:
+                year += 2000
+            return datetime(year, month, day).date().isoformat()
+        except Exception:
+            pass
+    return None
 
 import anthropic
 import click
@@ -168,6 +202,19 @@ def _cycle(platform: platforms.Platform, cfg: config.Config, client: anthropic.A
                         sent += 1
                         if viewing:
                             notifier.notify_viewing(viewing, m.thread_id)
+                            try:
+                                db.insert_appointment(
+                                    c,
+                                    platform=platform.name,
+                                    thread_id=m.thread_id,
+                                    counterparty=viewing.tenant,
+                                    phone=viewing.phone if viewing.phone != "unknown" else None,
+                                    listing_title=viewing.property if viewing.property != "unknown" else m.listing_title,
+                                    when_text=viewing.when if viewing.when != "unknown" else None,
+                                    when_date=_parse_iso_date(viewing.when),
+                                )
+                            except Exception as e:
+                                click.echo(f"  [appt insert error] {e}")
                             click.echo(f"  ⚑ viewing scheduled: {viewing.raw}")
                         time.sleep(random.uniform(*cfg.delay_between_replies_seconds))
                     except Exception as e:

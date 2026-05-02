@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Appointments — Rental Auto-Reply</title>
+<style>
+  body { font: 14px/1.5 -apple-system, system-ui, sans-serif; max-width: 1100px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid #ddd; }
+  nav a { color: #06c; text-decoration: none; font-weight: 500; }
+  nav a:hover { text-decoration: underline; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.05rem; margin-top: 1.75rem; padding-bottom: 0.4rem; border-bottom: 1px solid #eee; color: #444; }
+  .empty { color: #888; padding: 3rem 0; text-align: center; }
+  .pill { display: inline-block; padding: 0.25rem 0.7rem; margin-right: 0.35rem; margin-bottom: 0.35rem; border-radius: 14px; border: 1px solid #ccc; background: #fff; color: #444; text-decoration: none; font-size: 0.85rem; }
+  .pill.active { background: #06c; border-color: #06c; color: #fff; }
+  .pill .count { color: #888; margin-left: 0.3rem; }
+  .pill.active .count { color: #cce; }
+
+  .appt { border: 1px solid #ddd; border-radius: 6px; padding: 0.85rem 1rem; margin-bottom: 0.75rem; background: #fafafa; }
+  .appt header { display: flex; align-items: baseline; gap: 0.7rem; margin-bottom: 0.4rem; }
+  .appt header b { font-size: 1rem; }
+  .meta { color: #666; font-size: 0.85rem; }
+  .platform { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 0.75rem; font-weight: 500; }
+  .platform.facebook { background: #e7f0fe; color: #1a4ea0; }
+  .platform.avail    { background: #e8f5e9; color: #1b5e20; }
+  .platform.zillow   { background: #fff3e0; color: #b25800; }
+  .status { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 0.78rem; font-weight: 500; }
+  .status.scheduled      { background: #e7f0fe; color: #1a4ea0; }
+  .status.confirmed      { background: #d4edda; color: #155724; }
+  .status.viewed         { background: #e2e3e5; color: #383d41; }
+  .status.interested     { background: #c3e6cb; color: #155724; font-weight: 600; }
+  .status.not_interested { background: #f8d7da; color: #721c24; }
+  .status.no_show        { background: #fff3cd; color: #664d03; }
+  .status.cancelled      { background: #e2e3e5; color: #6c757d; text-decoration: line-through; }
+
+  .when { color: #444; font-size: 0.9rem; margin: 0.2rem 0 0.5rem; }
+  .actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.5rem; }
+  .actions form { display: inline; }
+  .actions select, .actions button {
+    font: inherit; padding: 0.25rem 0.6rem; font-size: 0.85rem;
+    border-radius: 3px; border: 1px solid #ccc; background: #fff; cursor: pointer;
+  }
+  .actions button.primary { background: #06c; color: white; border-color: #06c; }
+  .notes-area { margin-top: 0.5rem; }
+  .notes-area textarea {
+    width: 100%; box-sizing: border-box; min-height: 3rem; font: inherit;
+    padding: 0.4rem 0.55rem; border: 1px solid #ccc; border-radius: 3px;
+  }
+  details summary { cursor: pointer; color: #06c; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/">Drafts</a>
+  <a href="/appointments"><b>Appointments</b></a>
+  <a href="/listings">Listings</a>
+  <a href="/guidelines">Guidelines</a>
+  <a href="/history">History</a>
+  <a href="/config">Config</a>
+</nav>
+
+<h1>Appointments</h1>
+<p style="color:#666; margin-top:0;">Created automatically when the AI confirms a viewing in a thread (the <code>[VIEWING_CONFIRMED]</code> marker).</p>
+
+<div style="margin-bottom:1rem;">
+  <a class="pill {% if not status_filter %}active{% endif %}" href="/appointments">
+    All <span class="count">{{ total }}</span>
+  </a>
+  {% for s in statuses %}
+    <a class="pill {% if status_filter == s %}active{% endif %}" href="/appointments?status={{ s }}">
+      {{ s.replace('_',' ') }} <span class="count">{{ counts.get(s, 0) }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+{% if not grouped %}
+  <div class="empty">No appointments yet. They appear here once the AI confirms a viewing in a conversation.</div>
+{% endif %}
+
+{% for date, items in grouped.items() %}
+<h2>{{ date }} <span style="color:#888; font-size:0.85rem; font-weight:normal;">({{ items|length }})</span></h2>
+{% for a in items %}
+<div class="appt">
+  <header>
+    <b>{{ a.counterparty }}</b>
+    <span class="platform {{ a.platform }}">{{ a.platform }}</span>
+    <span class="status {{ a.status }}">{{ a.status.replace('_',' ') }}</span>
+  </header>
+  <div class="meta">
+    {% if a.listing_title %}{{ a.listing_title }}{% endif %}
+    {% if a.phone %} · 📞 <a href="tel:{{ a.phone }}">{{ a.phone }}</a>{% endif %}
+  </div>
+  {% if a.when_text %}<div class="when">🕒 {{ a.when_text }}</div>{% endif %}
+
+  <div class="actions">
+    <form method="post" action="/appointments/{{ a.id }}/status">
+      <select name="status">
+        {% for s in statuses %}
+          <option value="{{ s }}" {% if a.status == s %}selected{% endif %}>{{ s.replace('_',' ') }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="primary">Update</button>
+    </form>
+  </div>
+
+  <details class="notes-area" {% if a.notes %}open{% endif %}>
+    <summary>{% if a.notes %}Note: <span style="color:#444">{{ a.notes[:60] }}{% if a.notes|length > 60 %}…{% endif %}</span>{% else %}Add note{% endif %}</summary>
+    <form method="post" action="/appointments/{{ a.id }}/notes" style="margin-top:0.4rem;">
+      <textarea name="notes" placeholder="Add a note about this prospect…">{{ a.notes or '' }}</textarea>
+      <button type="submit" style="background:#06c; color:white; border-color:#06c; margin-top:0.3rem; padding:0.35rem 0.85rem; border-radius:3px; border:1px solid #06c; cursor:pointer; font:inherit;">Save note</button>
+    </form>
+  </details>
+</div>
+{% endfor %}
+{% endfor %}
+
+</body>
+</html>

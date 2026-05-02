@@ -419,6 +419,50 @@ async def config_save(request: Request):
     return RedirectResponse("/config?saved=1", status_code=303)
 
 
+# ── Appointments ───────────────────────────────────────────────────────
+
+@app.get("/appointments", response_class=HTMLResponse)
+def appointments_view(request: Request, status: Optional[str] = None):
+    valid = list(db.APPOINTMENT_STATUSES)
+    status_filter = status if status in valid else None
+    with db.conn(config.DB_PATH) as c:
+        appts = [dict(r) for r in db.list_appointments(c, status=status_filter)]
+        counts = db.status_counts(c)
+    # Group by when_date
+    grouped: dict[str, list[dict]] = {}
+    for a in appts:
+        key = a.get("when_date") or "Unscheduled / TBD"
+        grouped.setdefault(key, []).append(a)
+    return templates.TemplateResponse(
+        "appointments.html",
+        {
+            "request": request,
+            "grouped": grouped,
+            "counts": counts,
+            "statuses": valid,
+            "status_filter": status_filter,
+            "total": sum(counts.values()),
+        },
+    )
+
+
+@app.post("/appointments/{appt_id}/status")
+def appointments_status(appt_id: int, status: str = Form(...)):
+    with db.conn(config.DB_PATH) as c:
+        try:
+            db.update_appointment_status(c, appt_id, status)
+        except ValueError:
+            pass
+    return RedirectResponse("/appointments", status_code=303)
+
+
+@app.post("/appointments/{appt_id}/notes")
+def appointments_notes(appt_id: int, notes: str = Form("")):
+    with db.conn(config.DB_PATH) as c:
+        db.update_appointment_notes(c, appt_id, notes.strip())
+    return RedirectResponse("/appointments", status_code=303)
+
+
 # ── Guidelines editor ──────────────────────────────────────────────────
 
 @app.get("/guidelines", response_class=HTMLResponse)
