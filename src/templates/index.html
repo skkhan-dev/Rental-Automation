@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FB Auto-Reply — drafts</title>
+<style>
+  body { font: 14px/1.5 -apple-system, system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .mode { color: #666; margin-bottom: 2rem; }
+  .empty { color: #888; padding: 3rem 0; text-align: center; }
+  .draft { border: 1px solid #ddd; border-radius: 6px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; background: #fafafa; }
+  .meta { font-size: 0.85rem; color: #666; margin-bottom: 0.75rem; }
+  .meta b { color: #222; }
+  .reason { display: inline-block; background: #fff3cd; color: #664d03; padding: 2px 8px; border-radius: 3px; font-size: 0.8rem; }
+  .history { background: #fff; border: 1px solid #eee; padding: 0.5rem 0.75rem; margin: 0.75rem 0; border-radius: 4px; max-height: 220px; overflow-y: auto; }
+  .msg { margin: 0.4rem 0; }
+  .msg.in { color: #0a4; }
+  .msg.out { color: #06c; }
+  .msg b { font-weight: 600; }
+  textarea { width: 100%; min-height: 5rem; font: inherit; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical; }
+  .actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  button { font: inherit; padding: 0.4rem 1rem; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  button.send { background: #06c; color: white; border-color: #06c; }
+  button.reject { color: #c33; }
+  button:hover { filter: brightness(0.95); }
+  form { display: inline; }
+</style>
+</head>
+<body>
+
+<nav style="display:flex; gap:1rem; margin-bottom:1rem; padding-bottom:0.5rem; border-bottom:1px solid #ddd;">
+  <a href="/" style="color:#06c; text-decoration:none; font-weight:500;">Drafts</a>
+  <a href="/listings" style="color:#06c; text-decoration:none; font-weight:500;">Listings</a>
+  <a href="/guidelines" style="color:#06c; text-decoration:none; font-weight:500;">Guidelines</a>
+  <a href="/history" style="color:#06c; text-decoration:none; font-weight:500;">History</a>
+  <a href="/config" style="color:#06c; text-decoration:none; font-weight:500;">Config</a>
+</nav>
+
+<h1>Pending drafts</h1>
+<div class="mode">send mode: <b>{{ send_mode }}</b></div>
+
+{% if not drafts %}
+  <div class="empty">no pending drafts.</div>
+{% endif %}
+
+{% for d in drafts %}
+<div class="draft">
+  <div class="meta">
+    <b>{{ d.counterparty or "Unknown" }}</b>
+    {% if d.listing_title %} · {{ d.listing_title }}{% endif %}
+    · thread <code>{{ d.thread_id[:16] }}</code>
+    <br>
+    <span class="reason">{{ d.reason }}</span>
+  </div>
+
+  {% if d.history %}
+  <div class="history">
+    {% for h in d.history %}
+      <div class="msg {{ h.direction }}">
+        <b>{{ "Tenant" if h.direction == "in" else "Landlord" }}:</b>
+        {{ h.body }}
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="post" action="/drafts/{{ d.id }}/send">
+    <textarea name="body">{{ d.body }}</textarea>
+    <div class="actions">
+      <button type="submit" class="send">Send</button>
+      <button type="submit" formaction="/drafts/{{ d.id }}/save">Save edits</button>
+      <button type="submit" formaction="/drafts/{{ d.id }}/reject" class="reject">Reject</button>
+    </div>
+  </form>
+</div>
+{% endfor %}
+
+</body>
+</html>

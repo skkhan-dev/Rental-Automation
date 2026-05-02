@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Config — FB Auto-Reply</title>
+<style>
+  body { font: 14px/1.5 -apple-system, system-ui, sans-serif; max-width: 850px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid #ddd; }
+  nav a { color: #06c; text-decoration: none; font-weight: 500; }
+  nav a:hover { text-decoration: underline; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1rem; color: #333; margin-top: 1.75rem; padding-bottom: 0.4rem; border-bottom: 1px solid #eee; }
+  .saved { background: #d4edda; color: #155724; padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+  .field { margin-bottom: 1rem; }
+  .field label { display: block; font-weight: 500; font-size: 0.88rem; color: #333; margin-bottom: 0.25rem; }
+  .field .hint { font-size: 0.8rem; color: #777; margin-top: 0.15rem; }
+  .field input[type=text], .field input[type=number], .field select, .field textarea {
+    font: inherit;
+    padding: 0.4rem 0.55rem; border: 1px solid #ccc; border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .field input[type=text], .field select, .field textarea { width: 100%; }
+  .field input[type=number] { width: 8rem; }
+  .field textarea { font-family: ui-monospace, monospace; font-size: 0.88rem; min-height: 8rem; resize: vertical; }
+  .range { display: flex; gap: 0.5rem; align-items: center; }
+  .range span { color: #888; }
+  button { font: inherit; padding: 0.6rem 1.5rem; border-radius: 4px; border: 1px solid #06c; background: #06c; color: white; cursor: pointer; margin-top: 1rem; }
+  .readonly-info { background: #f5f5f5; padding: 0.75rem 1rem; border-radius: 4px; font-size: 0.85rem; color: #555; margin-top: 1rem; }
+  .readonly-info code { background: #fff; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/">Drafts</a>
+  <a href="/listings">Listings</a>
+  <a href="/guidelines">Guidelines</a>
+  <a href="/history">History</a>
+  <a href="/config"><b>Config</b></a>
+</nav>
+
+<h1>Configuration</h1>
+<p style="color:#666; margin-top:0;">Edits save to <code>config.yaml</code> and take effect on the next cycle.</p>
+
+{% if saved %}<div class="saved">✅ Saved.</div>{% endif %}
+
+<form method="post" action="/config/save">
+
+  <h2>Sending behavior</h2>
+
+  <div class="field">
+    <label for="send_mode">Send mode</label>
+    <select name="send_mode" id="send_mode">
+      <option value="auto"   {% if cfg.send_mode == "auto"   %}selected{% endif %}>auto — send everything</option>
+      <option value="hybrid" {% if cfg.send_mode == "hybrid" %}selected{% endif %}>hybrid — auto-send safe; queue if escalation trigger matches</option>
+      <option value="draft"  {% if cfg.send_mode == "draft"  %}selected{% endif %}>draft — never auto-send; everything queues for review</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label for="cycle_cap">Cycle cap (max replies sent per cycle)</label>
+    <input type="number" id="cycle_cap" name="cycle_cap" min="1" max="50" value="{{ cfg.cycle_cap or 5 }}">
+    <div class="hint">Excess unread messages roll to the next cycle. Tightens bot signal.</div>
+  </div>
+
+  <div class="field">
+    <label>Delay between replies (random pause within a cycle)</label>
+    <div class="range">
+      <input type="number" name="delay_min_s" min="1" value="{{ cfg.delay_between_replies_seconds[0] }}"> sec
+      <span>to</span>
+      <input type="number" name="delay_max_s" min="1" value="{{ cfg.delay_between_replies_seconds[1] }}"> sec
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Typing delay per character (random; mimics human typing)</label>
+    <div class="range">
+      <input type="number" name="typing_min_ms" min="0" value="{{ cfg.typing_delay_ms[0] }}"> ms
+      <span>to</span>
+      <input type="number" name="typing_max_ms" min="0" value="{{ cfg.typing_delay_ms[1] }}"> ms
+    </div>
+  </div>
+
+  <h2>Escalation triggers (hybrid mode only)</h2>
+
+  <div class="field">
+    <label for="escalation_triggers">One trigger per line. Lower-cased, substring match against inbound or draft.</label>
+    <textarea id="escalation_triggers" name="escalation_triggers">{% for t in cfg.escalation_triggers %}{{ t }}
+{% endfor %}</textarea>
+    <div class="hint">If any trigger appears in the message or the AI's draft, the reply is queued for your review instead of auto-sent.</div>
+  </div>
+
+  <h2>AI model</h2>
+
+  <div class="field">
+    <label for="model">Anthropic model ID</label>
+    <input type="text" id="model" name="model" value="{{ cfg.model }}">
+    <div class="hint">Default <code>claude-sonnet-4-6</code>. Use <code>claude-opus-4-7</code> for higher quality at higher cost.</div>
+  </div>
+
+  <h2>Schedule (launchd window + random interval)</h2>
+
+  <div class="field">
+    <label>Active window (24h clock)</label>
+    <div class="range">
+      from <input type="number" name="start_hour" min="0" max="23" value="{{ cfg.schedule.start_hour if cfg.schedule else 8 }}">
+      to (exclusive) <input type="number" name="end_hour" min="1" max="24" value="{{ cfg.schedule.end_hour if cfg.schedule else 21 }}">
+    </div>
+    <div class="hint">launchd ticks every 10 min, but the wrapper exits silently outside this window. e.g. start=8, end=21 means run 8am through 8:59pm.</div>
+  </div>
+
+  <div class="field">
+    <label>Random interval between cycles</label>
+    <div class="range">
+      <input type="number" name="min_interval_seconds" min="60" value="{{ cfg.schedule.min_interval_seconds if cfg.schedule else 1200 }}"> sec
+      <span>to</span>
+      <input type="number" name="max_interval_seconds" min="60" value="{{ cfg.schedule.max_interval_seconds if cfg.schedule else 3000 }}"> sec
+    </div>
+    <div class="hint">After each cycle, a random delay in this range is picked before the next one runs. 1200–3000 = 20–50 min.</div>
+  </div>
+
+  <h2>Polling (fallback only)</h2>
+
+  <div class="field">
+    <label for="poll_interval_seconds">Polling interval (only used by <code>run</code> without <code>--once</code>)</label>
+    <input type="number" id="poll_interval_seconds" name="poll_interval_seconds" min="60" value="{{ cfg.poll_interval_seconds }}">
+    <div class="hint">launchd controls the real schedule (set above). This setting is only relevant if you run a continuous foreground loop.</div>
+  </div>
+
+  <button type="submit">Save</button>
+
+</form>
+
+<div class="readonly-info">
+  <b>Not editable from this page</b>:
+  <ul style="margin: 0.5rem 0; padding-left: 1.25rem;">
+    <li>API key — edit <code>.env</code> (sensitive; not exposed via no-auth dashboard)</li>
+    <li>launchd registration — to install/uninstall the schedule itself, use <code>launchctl bootstrap</code> / <code>launchctl bootout</code></li>
+  </ul>
+</div>
+
+</body>
+</html>

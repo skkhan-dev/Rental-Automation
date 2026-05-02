@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Listings — FB Auto-Reply</title>
+<style>
+  body { font: 14px/1.5 -apple-system, system-ui, sans-serif; max-width: 1000px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid #ddd; }
+  nav a { color: #06c; text-decoration: none; font-weight: 500; }
+  nav a:hover { text-decoration: underline; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .saved { background: #d4edda; color: #155724; padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+  .listing { border: 1px solid #ddd; border-radius: 6px; padding: 1.25rem; margin-bottom: 1.5rem; background: #fafafa; position: relative; }
+  .listing h2 { font-size: 1.1rem; margin-top: 0; }
+  .field { margin-bottom: 0.85rem; }
+  .field label { display: block; font-weight: 500; font-size: 0.85rem; color: #444; margin-bottom: 0.2rem; }
+  .field input[type=text], .field input[type=number], .field textarea {
+    width: 100%; box-sizing: border-box; font: inherit;
+    padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px;
+  }
+  .field textarea { min-height: 3rem; resize: vertical; font-family: ui-monospace, monospace; font-size: 0.88rem; }
+  .field.int input { max-width: 8rem; }
+  .actions { display: flex; gap: 0.5rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #ccc; }
+  button { font: inherit; padding: 0.5rem 1rem; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  button.primary { background: #06c; color: white; border-color: #06c; }
+  button.danger { color: #c33; }
+  .delete-toggle { float: right; font-size: 0.85rem; }
+  details summary { cursor: pointer; font-weight: 500; padding: 0.4rem 0; }
+  .page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .page-head h1 { margin: 0; }
+  .add-top { margin: 0; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/">Drafts</a>
+  <a href="/listings">Listings</a>
+  <a href="/guidelines">Guidelines</a>
+  <a href="/history">History</a>
+  <a href="/config">Config</a>
+</nav>
+
+<div class="page-head">
+  <h1>Listings</h1>
+  <form method="post" action="/listings/add" class="add-top">
+    <button type="submit" class="primary">+ Add Listing</button>
+  </form>
+</div>
+<p style="color:#666; margin-top:0;">Edits save to <code>listings.yaml</code> and take effect on the next cycle.</p>
+
+{% if saved %}<div class="saved">✅ Saved.</div>{% endif %}
+
+<form method="post" action="/listings/save">
+{% for L in listings %}
+  {% set lidx = loop.index0 %}
+  <div class="listing">
+    <h2>
+      {{ L.name or L.title_match or "(unnamed)" }}
+      <span style="font-weight:normal; color:#888; font-size:0.85rem;">— {{ L.status or "available" }}</span>
+      <label class="delete-toggle">
+        <input type="checkbox" name="listings.{{ lidx }}.__delete" value="1"> delete on save
+      </label>
+    </h2>
+
+    {% for fname, label, kind in fields %}
+    <div class="field {{ kind }}">
+      <label for="f{{ lidx }}_{{ fname }}">{{ label }}</label>
+      {% if kind == "textarea" %}
+        <textarea name="listings.{{ lidx }}.{{ fname }}"
+                  id="f{{ lidx }}_{{ fname }}">{{ L.get(fname, "") }}</textarea>
+      {% elif kind == "int" %}
+        <input type="number" name="listings.{{ lidx }}.{{ fname }}"
+               id="f{{ lidx }}_{{ fname }}"
+               value="{{ L.get(fname, '') }}">
+      {% else %}
+        <input type="text" name="listings.{{ lidx }}.{{ fname }}"
+               id="f{{ lidx }}_{{ fname }}"
+               value="{{ L.get(fname, '') }}">
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+{% endfor %}
+
+  <div class="actions">
+    <button type="submit" class="primary">Save all</button>
+    <button type="submit" formaction="/listings/add" formmethod="post">+ Add new listing</button>
+  </div>
+</form>
+
+</body>
+</html>

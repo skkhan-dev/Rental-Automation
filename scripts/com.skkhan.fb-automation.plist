@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.skkhan.fb-automation</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>/Users/skkhan/workarea/Facebook-Automation/scripts/run_cycle.sh</string>
+    </array>
+
+    <!-- Fire every 10 min. The wrapper script enforces the random 20-50 min interval. -->
+    <key>StartInterval</key>
+    <integer>600</integer>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/skkhan/workarea/Facebook-Automation/logs/launchd.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/skkhan/workarea/Facebook-Automation/logs/launchd.err.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/skkhan/workarea/Facebook-Automation</string>
+</dict>
+</plist>

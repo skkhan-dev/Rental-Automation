@@ -1,0 +1,28 @@
+poll_interval_seconds: 180
+
+send_mode: hybrid  # auto | draft | hybrid
+
+# In hybrid mode: queue (don't auto-send) replies that match any of these
+escalation_triggers:
+  - price negotiation
+  - lower rent
+  - discount
+  - lease term change
+  - early move-in
+  - late move-in
+  - pet beyond policy
+  - cosigner
+  - section 8
+  - voucher
+  - eviction
+  - schedule tour
+  - schedule viewing
+  - in person
+  - tonight
+  - tomorrow
+
+# Conservative jitter so we don't look like a bot
+delay_between_replies_seconds: [20, 60]
+typing_delay_ms: [40, 120]
+
+model: claude-sonnet-4-6

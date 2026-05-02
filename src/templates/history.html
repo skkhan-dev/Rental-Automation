@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>History — FB Auto-Reply</title>
+<style>
+  body { font: 14px/1.5 -apple-system, system-ui, sans-serif; max-width: 1000px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid #ddd; }
+  nav a { color: #06c; text-decoration: none; font-weight: 500; }
+  nav a:hover { text-decoration: underline; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .toolbar { display: flex; gap: 0.5rem; margin-bottom: 1rem; padding: 0.6rem 0.75rem; background: #f5f5f5; border-radius: 4px; }
+  .toolbar button { font: inherit; padding: 0.35rem 0.85rem; border-radius: 3px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  .toolbar button.danger { color: #c33; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eee; vertical-align: top; }
+  th { background: #fafafa; font-size: 0.85rem; color: #555; }
+  tr.success td.status { color: #2a7d2a; }
+  tr.partial td.status { color: #b07b00; }
+  tr.failure td.status { color: #c33; }
+  tr.running td.status { color: #06c; font-weight: 500; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .err { color: #888; font-size: 0.82rem; max-width: 350px; word-break: break-word; }
+  .actions { display: flex; gap: 0.4rem; }
+  .actions button { font: inherit; padding: 0.2rem 0.6rem; font-size: 0.8rem; border-radius: 3px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  .actions button.danger { color: #c33; }
+  .expanded { background: #fafbfc; padding: 1rem 1.25rem; border-left: 3px solid #06c; margin: 0.5rem 0 1rem 1rem; }
+  .draft-row { padding: 0.5rem 0; border-bottom: 1px dashed #eee; font-size: 0.9rem; }
+  .draft-row:last-child { border-bottom: 0; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 0.75rem; font-weight: 500; }
+  .badge.sent { background: #d4edda; color: #155724; }
+  .badge.pending { background: #fff3cd; color: #664d03; }
+  .badge.rejected { background: #f8d7da; color: #721c24; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/">Drafts</a>
+  <a href="/listings">Listings</a>
+  <a href="/guidelines">Guidelines</a>
+  <a href="/history"><b>History</b></a>
+  <a href="/config">Config</a>
+</nav>
+
+<h1>Run history</h1>
+
+<div style="background:#f5f7fa; padding:0.6rem 0.9rem; border-radius:4px; margin-bottom:1rem; font-size:0.9rem; color:#444;">
+  {% if last_cycle %}
+    Last run:
+    <b class="{{ last_cycle.status }}" style="
+      {% if last_cycle.status == 'success' %}color:#2a7d2a;
+      {% elif last_cycle.status == 'partial' %}color:#b07b00;
+      {% elif last_cycle.status == 'failure' %}color:#c33;
+      {% elif last_cycle.status == 'running' %}color:#06c;
+      {% endif %}">{{ last_cycle.status }}</b>
+    @ {{ last_cycle.started_ts | datetimeformat }}
+    ({{ last_cycle.replies_sent }} sent, {{ last_cycle.replies_queued }} queued, {{ last_cycle.unread_found }} unread)
+  {% else %}
+    Last run: <span style="color:#888;">none yet</span>
+  {% endif %}
+  &nbsp;·&nbsp;
+  Next run: {% if next_run_human %}<b>{{ next_run_human }}</b> ({{ next_run_relative }}){% else %}<span style="color:#888;">whenever launchd next tickles the wrapper</span>{% endif %}
+</div>
+
+
+<div class="toolbar">
+  <form method="post" action="/history/clear" onsubmit="return confirm('Delete ALL cycle history? Drafts and messages will not be deleted.')">
+    <input type="hidden" name="scope" value="all">
+    <button type="submit" class="danger">Delete all</button>
+  </form>
+  <form method="post" action="/history/clear" onsubmit="return confirm('Delete all failed/partial cycles only?')">
+    <input type="hidden" name="scope" value="failures">
+    <button type="submit">Delete failed only</button>
+  </form>
+</div>
+
+{% if not cycles %}
+  <p style="color:#888; padding:2rem 0; text-align:center;">no cycles recorded yet.</p>
+{% else %}
+<table>
+  <thead>
+    <tr>
+      <th>Started</th>
+      <th>Duration</th>
+      <th class="status">Status</th>
+      <th class="num">Unread</th>
+      <th class="num">Sent</th>
+      <th class="num">Queued</th>
+      <th>Error</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for c in cycles %}
+    <tr class="{{ c.status }}">
+      <td><a href="?expand={{ c.id }}">
+        {{ c.started_ts | datetimeformat }}
+      </a></td>
+      <td>{% if c.ended_ts %}{{ c.ended_ts - c.started_ts }}s{% else %}—{% endif %}</td>
+      <td class="status">{{ c.status }}</td>
+      <td class="num">{{ c.unread_found }}</td>
+      <td class="num">{{ c.replies_sent }}</td>
+      <td class="num">{{ c.replies_queued }}</td>
+      <td class="err">{{ c.error_msg or "" }}</td>
+      <td>
+        <div class="actions">
+          <form method="post" action="/history/{{ c.id }}/delete">
+            <button type="submit" class="danger">×</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% if expand == c.id %}
+    <tr><td colspan="8" style="padding:0;">
+      <div class="expanded">
+        <b>Cycle {{ c.id }} details</b>
+        {% if expanded_drafts %}
+          {% for d in expanded_drafts %}
+          <div class="draft-row">
+            <span class="badge {{ d.status }}">{{ d.status }}</span>
+            <b>{{ d.counterparty or "Unknown" }}</b>
+            {% if d.listing_title %}· {{ d.listing_title }}{% endif %}
+            <div style="margin-top:0.25rem; color:#444;">{{ d.body }}</div>
+            <div style="color:#888; font-size:0.78rem; margin-top:0.25rem;">{{ d.reason }}</div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div style="color:#888; padding:0.5rem 0;">No drafts in this cycle.</div>
+        {% endif %}
+      </div>
+    </td></tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+</body>
+</html>

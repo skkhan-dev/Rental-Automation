@@ -1,0 +1,18 @@
+# Per-listing context. The classifier matches a thread to a listing
+# by the FB Marketplace listing title (best-effort substring match).
+# Add one entry per active listing.
+
+listings:
+  - title_match: "2BR apartment downtown"
+    address: "123 Main St, Apt 4, Anytown"
+    rent: 2400
+    deposit: 2400
+    lease_term_months: 12
+    available_from: "2026-06-01"
+    pets: "Cats OK with $250 pet deposit. No dogs."
+    utilities: "Tenant pays electric and internet. Water and trash included."
+    parking: "One off-street spot included."
+    laundry: "In-unit washer/dryer."
+    notes: |
+      Quiet building, hardwood floors, recently renovated kitchen.
+      Looking for non-smokers, income 3x rent, no evictions.
