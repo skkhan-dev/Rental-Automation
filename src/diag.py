@@ -102,6 +102,98 @@ def dump_inbox(platform: Platform, wait_seconds: int = 12) -> None:
             except Exception:
                 pass
 
+        # Avail-specific: try to open the messages drawer if we see one
+        try:
+            drawer_btn = page.get_by_role("button", name=__import__("re").compile("messages drawer", __import__("re").IGNORECASE))
+            if drawer_btn.count() > 0:
+                print("\n--- attempting to open messages drawer ---")
+                drawer_btn.first.click()
+                page.wait_for_timeout(3500)
+                drawer_path = DATA_DIR / f"{platform.name}_drawer.png"
+                page.screenshot(path=str(drawer_path), full_page=True)
+                print(f"drawer screenshot: {drawer_path}")
+
+                # Threads inside the drawer
+                print("\n--- drawer anchors with text (first 20) ---")
+                shown = 0
+                for a in page.locator("a").all():
+                    try:
+                        href = (a.get_attribute("href") or "")[:90]
+                        text = (a.inner_text() or "").strip().replace("\n", " | ")[:120]
+                        if text and ("message" in href.lower() or "thread" in href.lower() or "conversation" in href.lower() or "lead" in href.lower() or "applicant" in href.lower() or len(text) > 20):
+                            print(f"  href={href}  text={text!r}")
+                            shown += 1
+                            if shown >= 20:
+                                break
+                    except Exception:
+                        pass
+
+                # Drawer-internal role=listitem (likely the thread list)
+                print("\n--- drawer role=listitem (first 20) ---")
+                items = page.get_by_role("listitem").all()
+                for it in items[-20:]:
+                    try:
+                        aria = (it.get_attribute("aria-label") or "")[:80]
+                        text = (it.inner_text() or "").strip().replace("\n", " | ")[:140]
+                        if aria or text:
+                            print(f"  aria={aria!r}  text={text!r}")
+                    except Exception:
+                        pass
+
+                # Drawer textboxes (reply input is probably inside here)
+                print("\n--- drawer textboxes ---")
+                for tb in page.get_by_role("textbox").all():
+                    try:
+                        aria = tb.get_attribute("aria-label") or "(none)"
+                        ph = tb.get_attribute("placeholder") or "(none)"
+                        print(f"  aria={aria!r}  placeholder={ph!r}")
+                    except Exception:
+                        pass
+
+                # Scoped probe: find the dialog/modal that contains the drawer
+                print("\n--- dialog containers ---")
+                dialogs = page.get_by_role("dialog").all()
+                print(f"role=dialog count: {len(dialogs)}")
+                for i, d in enumerate(dialogs):
+                    try:
+                        aria = (d.get_attribute("aria-label") or "")[:80]
+                        print(f"  [{i}] aria={aria!r}")
+                    except Exception:
+                        pass
+
+                # Look for an "Unread" filter pill/button
+                print("\n--- Unread filter probe ---")
+                unread_btns = page.get_by_role("button", name=__import__("re").compile(r"^unread", __import__("re").IGNORECASE)).all()
+                tab_btns = page.get_by_role("tab", name=__import__("re").compile(r"^unread", __import__("re").IGNORECASE)).all()
+                print(f"  buttons matching ^unread: {len(unread_btns)}")
+                print(f"  tabs matching ^unread: {len(tab_btns)}")
+                if unread_btns or tab_btns:
+                    target = (unread_btns + tab_btns)[0]
+                    try:
+                        target.click()
+                        page.wait_for_timeout(2000)
+                        page.screenshot(path=str(DATA_DIR / f"{platform.name}_unread_filtered.png"), full_page=True)
+                        print(f"  clicked Unread; screenshot: {DATA_DIR / (platform.name + '_unread_filtered.png')}")
+                    except Exception as e:
+                        print(f"  click failed: {e}")
+
+                # After filter: dump unique outer-rail thread items
+                print("\n--- post-filter thread rail items (heuristic: short text under 80 chars) ---")
+                import hashlib
+                seen_texts = set()
+                for el in page.locator('div:has(> *)').all()[:200]:
+                    try:
+                        text = (el.inner_text() or "").strip()
+                        if 5 < len(text) < 80 and "@" not in text and text not in seen_texts:
+                            seen_texts.add(text)
+                    except Exception:
+                        pass
+                # Print the few that look like thread headers
+                for t in list(seen_texts)[:30]:
+                    print(f"  {t!r}")
+        except Exception as e:
+            print(f"\ndrawer probe error: {e}")
+
 
 # Backwards-compat: support `python -m src.diag` directly with a positional arg
 if __name__ == "__main__":
