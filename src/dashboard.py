@@ -33,8 +33,9 @@ app = FastAPI()
 _cfg: config.Config | None = None
 
 # Field schema for the listings editor — order, label, kind
+_LISTING_LIFECYCLES = ["active", "pause", "archive"]
 _LISTING_FIELDS = [
-    ("active", "Active (uncheck to archive — skipped from matching/replies)", "bool"),
+    ("lifecycle", "Lifecycle (active = in cycle · pause = shown but skipped · archive = hidden)", "select"),
     ("title_match", "Title match (substring of the listing title across platforms)", "text"),
     ("status", "Status (available / rented)", "text"),
     ("name", "Display name", "text"),
@@ -66,6 +67,21 @@ _LISTING_FIELDS = [
 LISTINGS_PATH = Path(__file__).resolve().parent.parent / "listings.yaml"
 GUIDELINES_PATH = Path(__file__).resolve().parent.parent / "guidelines.md"
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+
+
+def _normalize_lifecycle(L: dict) -> str:
+    """Read a listing's lifecycle, migrating legacy `active: bool`."""
+    val = (L.get("lifecycle") or "").strip().lower()
+    if val in _LISTING_LIFECYCLES:
+        return val
+    # Legacy bool migration
+    if "active" in L:
+        return "active" if L.get("active") else "archive"
+    return "active"  # default for new entries
+
+
+def _load_listings_doc() -> dict:
+    return yaml.safe_load(LISTINGS_PATH.read_text()) or {}
 
 
 def _config() -> config.Config:
@@ -183,18 +199,110 @@ def clear_all_pending_drafts():
 # ── Listings editor ────────────────────────────────────────────────────
 
 @app.get("/listings", response_class=HTMLResponse)
-def listings_view(request: Request, saved: int = 0):
-    doc = yaml.safe_load(LISTINGS_PATH.read_text()) or {}
-    listings = doc.get("listings", [])
+def listings_view(request: Request, saved: int = 0, view: str = "active"):
+    doc = _load_listings_doc()
+    raw_listings = doc.get("listings", [])
+    # Annotate each listing with its lifecycle (also retains original index)
+    listings = []
+    for idx, L in enumerate(raw_listings):
+        L = dict(L)  # don't mutate the loaded yaml
+        L["_idx"] = idx
+        L["_lifecycle"] = _normalize_lifecycle(L)
+        listings.append(L)
+
+    # Tab counts
+    counts = {"active": 0, "archive": 0}
+    for L in listings:
+        if L["_lifecycle"] == "archive":
+            counts["archive"] += 1
+        else:  # active or pause both count under "Active Listings"
+            counts["active"] += 1
+
+    # Filter by tab
+    view = view if view in ("active", "archive") else "active"
+    if view == "archive":
+        visible = [L for L in listings if L["_lifecycle"] == "archive"]
+    else:
+        visible = [L for L in listings if L["_lifecycle"] != "archive"]
+
     return templates.TemplateResponse(
         "listings.html",
         {
             "request": request,
-            "listings": listings,
+            "listings": visible,
             "fields": _LISTING_FIELDS,
+            "lifecycle_choices": _LISTING_LIFECYCLES,
+            "view": view,
+            "counts": counts,
             "saved": bool(saved),
         },
     )
+
+
+@app.post("/listings/{idx}/save")
+async def listings_save_one(idx: int, request: Request):
+    """Save a single listing in place, leaving the others untouched."""
+    form = await request.form()
+    doc = _load_listings_doc()
+    listings = doc.get("listings") or []
+    if not (0 <= idx < len(listings)):
+        return RedirectResponse("/listings?view=active", status_code=303)
+
+    if form.get("__delete") == "1":
+        listings.pop(idx)
+    else:
+        cleaned = {}
+        for fname, _label, kind in _LISTING_FIELDS:
+            if kind == "bool":
+                cleaned[fname] = form.get(fname) == "on"
+                continue
+            raw = (form.get(fname) or "").strip() if isinstance(form.get(fname), str) else ""
+            if kind == "select":
+                if raw in _LISTING_LIFECYCLES:
+                    cleaned[fname] = raw
+                continue
+            if not raw:
+                continue
+            if kind == "int":
+                try:
+                    cleaned[fname] = int(raw)
+                except ValueError:
+                    cleaned[fname] = raw
+            else:
+                cleaned[fname] = raw
+        cleaned.setdefault("lifecycle", "active")
+        listings[idx] = cleaned
+
+    LISTINGS_PATH.write_text(
+        "# Edited via dashboard at " + time.strftime("%Y-%m-%d %H:%M:%S") + "\n"
+        + yaml.safe_dump({"listings": listings}, sort_keys=False, allow_unicode=True)
+    )
+    _reload_config()
+    # Stay on whatever tab the listing is now in
+    target_view = "archive" if (cleaned.get("lifecycle") if isinstance(cleaned, dict) else None) == "archive" else "active"
+    return RedirectResponse(f"/listings?view={target_view}&saved=1", status_code=303)
+
+
+@app.post("/listings/{idx}/lifecycle")
+def listings_set_lifecycle(idx: int, value: str = Form(...)):
+    """Quick-action: change one listing's lifecycle without saving the whole form."""
+    if value not in _LISTING_LIFECYCLES:
+        return RedirectResponse("/listings", status_code=303)
+    doc = _load_listings_doc()
+    listings = doc.get("listings") or []
+    if 0 <= idx < len(listings):
+        listings[idx]["lifecycle"] = value
+        # Drop legacy `active` field if present
+        listings[idx].pop("active", None)
+        LISTINGS_PATH.write_text(
+            "# Edited via dashboard at " + time.strftime("%Y-%m-%d %H:%M:%S") + "\n"
+            + yaml.safe_dump({"listings": listings}, sort_keys=False, allow_unicode=True)
+        )
+        _reload_config()
+    # Stay on whatever tab made sense: archive moves to active tab so user
+    # can confirm; archiving stays on active tab where it disappears.
+    target_view = "active" if value != "archive" else "active"
+    return RedirectResponse(f"/listings?view={target_view}&saved=1", status_code=303)
 
 
 @app.post("/listings/save")
@@ -223,10 +331,13 @@ async def listings_save(request: Request):
         cleaned = {}
         for fname, _label, kind in _LISTING_FIELDS:
             if kind == "bool":
-                # Checkbox sends "on" when checked; nothing when unchecked.
                 cleaned[fname] = entry.get(fname) == "on"
                 continue
-            raw = entry.get(fname, "").strip()
+            raw = (entry.get(fname) or "").strip()
+            if kind == "select":
+                if raw in _LISTING_LIFECYCLES:
+                    cleaned[fname] = raw
+                continue
             if not raw:
                 continue
             if kind == "int":
@@ -236,8 +347,7 @@ async def listings_save(request: Request):
                     cleaned[fname] = raw
             else:
                 cleaned[fname] = raw
-        # Default new listings to active=True if user didn't toggle it
-        cleaned.setdefault("active", True)
+        cleaned.setdefault("lifecycle", "active")
         if cleaned.get("title_match") or cleaned.get("name"):
             new_listings.append(cleaned)
 

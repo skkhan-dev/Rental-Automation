@@ -10,31 +10,63 @@
   nav a:hover { text-decoration: underline; }
   h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
   .saved { background: #d4edda; color: #155724; padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
-  .listing { border: 1px solid #ddd; border-radius: 6px; padding: 1.25rem; margin-bottom: 1.5rem; background: #fafafa; position: relative; }
-  .listing h2 { font-size: 1.1rem; margin-top: 0; }
+  .page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .page-head h1 { margin: 0; }
+
+  .pill { display: inline-block; padding: 0.3rem 0.85rem; margin-right: 0.4rem;
+          border-radius: 20px; border: 1px solid #ccc; background: #fff;
+          color: #444; text-decoration: none; font-size: 0.88rem; font-weight: 500; }
+  .pill.active { background: #06c; border-color: #06c; color: #fff; }
+  .pill .count { color: #888; margin-left: 0.3rem; font-weight: normal; }
+  .pill.active .count { color: #cce; }
+
+  details.listing { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 0.5rem; background: #fff; overflow: hidden; }
+  details.listing[open] { background: #fafafa; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  details.listing summary {
+    display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
+    padding: 0.7rem 1rem; cursor: pointer; user-select: none;
+    list-style: none;
+  }
+  details.listing summary::-webkit-details-marker { display: none; }
+  details.listing summary::before {
+    content: "▸"; color: #999; font-size: 0.8rem;
+    width: 12px;
+  }
+  details.listing[open] summary::before { content: "▾"; }
+  details.listing summary .name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quick-actions { margin-left: auto; display: flex; gap: 0.3rem; }
+  .quick-actions form { margin: 0; display: inline; }
+  .quick-actions button {
+    font: inherit; padding: 0.25rem 0.7rem; font-size: 0.78rem;
+    border-radius: 3px; border: 1px solid #ccc; background: #fff; cursor: pointer; color: #555;
+  }
+  .quick-actions button:hover { background: #f0f0f0; }
+  .quick-actions button.danger { color: #c33; }
+  .quick-actions button.primary { background: #06c; color: white; border-color: #06c; }
+
+  .lifecycle { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 0.75rem; font-weight: 500; }
+  .lifecycle.active  { background: #d4edda; color: #155724; }
+  .lifecycle.pause   { background: #fff3cd; color: #664d03; }
+  .lifecycle.archive { background: #e2e3e5; color: #6c757d; }
+  .platform { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 0.72rem; font-weight: 500; text-decoration: none; }
+  .platform.facebook { background: #e7f0fe; color: #1a4ea0; }
+  .platform.avail    { background: #e8f5e9; color: #1b5e20; }
+  .platform.zillow   { background: #fff3e0; color: #b25800; }
+
+  .form-area { padding: 0.75rem 1rem 1rem; border-top: 1px solid #eee; }
   .field { margin-bottom: 0.85rem; }
   .field label { display: block; font-weight: 500; font-size: 0.85rem; color: #444; margin-bottom: 0.2rem; }
-  .field input[type=text], .field input[type=number], .field textarea {
+  .field input[type=text], .field input[type=number], .field input[type=url], .field textarea, .field select {
     width: 100%; box-sizing: border-box; font: inherit;
     padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px;
   }
   .field textarea { min-height: 3rem; resize: vertical; font-family: ui-monospace, monospace; font-size: 0.88rem; }
+  .field input[type=url] { font-family: ui-monospace, monospace; font-size: 0.85rem; }
   .field.int input { max-width: 8rem; }
-  .actions { display: flex; gap: 0.5rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #ccc; }
-  button { font: inherit; padding: 0.5rem 1rem; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
-  button.primary { background: #06c; color: white; border-color: #06c; }
-  button.danger { color: #c33; }
-  .delete-toggle { float: right; font-size: 0.85rem; }
-  details summary { cursor: pointer; font-weight: 500; padding: 0.4rem 0; }
-  .page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-  .page-head h1 { margin: 0; }
-  .add-top { margin: 0; }
-  .platform { display: inline-block; border-radius: 3px; font-size: 0.78rem; font-weight: 500; }
-  .platform.facebook { background: #e7f0fe; color: #1a4ea0; }
-  .platform.avail    { background: #e8f5e9; color: #1b5e20; }
-  .platform.zillow   { background: #fff3e0; color: #b25800; }
-  .field.bool input { margin: 0 !important; }
-  .field.url input { font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  .form-actions { display:flex; gap: 0.5rem; align-items:center; margin-top: 1rem; padding-top: 0.7rem; border-top: 1px dashed #ddd; }
+  .form-actions button.primary { background: #06c; color: white; border-color: #06c; }
+  .form-actions button { font: inherit; padding: 0.5rem 1.1rem; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  .delete-toggle { color: #c33; font-size: 0.85rem; margin-left: auto; }
 </style>
 </head>
 <body>
@@ -42,7 +74,7 @@
 <nav>
   <a href="/">Drafts</a>
   <a href="/appointments">Appointments</a>
-  <a href="/listings">Listings</a>
+  <a href="/listings"><b>Listings</b></a>
   <a href="/guidelines">Guidelines</a>
   <a href="/history">History</a>
   <a href="/config">Config</a>
@@ -50,88 +82,120 @@
 
 <div class="page-head">
   <h1>Listings</h1>
-  <form method="post" action="/listings/add" class="add-top">
-    <button type="submit" class="primary">+ Add Listing</button>
+  <form method="post" action="/listings/add">
+    <button type="submit" class="primary" style="font:inherit; padding:0.5rem 1rem; border-radius:4px; border:1px solid #06c; background:#06c; color:white; cursor:pointer;">+ Add Listing</button>
   </form>
 </div>
 <p style="color:#666; margin-top:0;">Edits save to <code>listings.yaml</code> and take effect on the next cycle.</p>
 
 {% if saved %}<div class="saved">✅ Saved.</div>{% endif %}
 
-<form method="post" action="/listings/save">
+<div style="margin-bottom:1rem;">
+  <a class="pill {% if view == 'active' %}active{% endif %}" href="/listings?view=active">
+    Active Listings <span class="count">{{ counts.active }}</span>
+  </a>
+  <a class="pill {% if view == 'archive' %}active{% endif %}" href="/listings?view=archive">
+    Archive <span class="count">{{ counts.archive }}</span>
+  </a>
+</div>
+
+{% if not listings %}
+  <p style="color:#888; padding:2rem 0; text-align:center;">
+    {% if view == 'archive' %}No archived listings.{% else %}No active listings yet — click "+ Add Listing".{% endif %}
+  </p>
+{% endif %}
+
 {% for L in listings %}
-  {% set lidx = loop.index0 %}
-  {% set is_active = L.get("active", True) %}
-  <div class="listing" style="{% if not is_active %}opacity:0.55;{% endif %}">
-    <h2>
-      {{ L.name or L.title_match or "(unnamed)" }}
-      <span style="font-weight:normal; color:#888; font-size:0.85rem;">
-        — {{ L.status or "available" }}
-        {% if not is_active %} · <b style="color:#888">ARCHIVED</b>{% endif %}
-      </span>
-      <label class="delete-toggle">
-        <input type="checkbox" name="listings.{{ lidx }}.__delete" value="1"> delete on save
-      </label>
-    </h2>
+  {% set lidx = L._idx %}
+  {% set lc = L._lifecycle %}
+  <details class="listing">
+    <summary>
+      <span class="name">{{ L.name or L.title_match or "(unnamed)" }}</span>
+      <span class="lifecycle {{ lc }}">{{ lc }}</span>
+      {% if L.status %}<span style="color:#888; font-size:0.8rem;">{{ L.status }}</span>{% endif %}
+      {% if L.fb_url %}<a class="platform facebook" href="{{ L.fb_url }}" target="_blank" rel="noopener" onclick="event.stopPropagation()">FB ↗</a>{% endif %}
+      {% if L.avail_url %}<a class="platform avail" href="{{ L.avail_url }}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Avail ↗</a>{% endif %}
+      {% if L.zillow_url %}<a class="platform zillow" href="{{ L.zillow_url }}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Zillow ↗</a>{% endif %}
 
-    {# Quick links to the listing on each platform #}
-    {% set links = [] %}
-    {% if L.fb_url %}{% set _ = links.append(("Facebook", L.fb_url, "facebook")) %}{% endif %}
-    {% if L.avail_url %}{% set _ = links.append(("Avail", L.avail_url, "avail")) %}{% endif %}
-    {% if L.zillow_url %}{% set _ = links.append(("Zillow", L.zillow_url, "zillow")) %}{% endif %}
-    {% if links %}
-    <div style="margin: 0.4rem 0 0.6rem; font-size: 0.85rem;">
-      Live on:
-      {% for label, url, cls in links %}
-        <a href="{{ url }}" target="_blank" rel="noopener"
-           class="platform {{ cls }}"
-           style="margin-right:0.35rem; text-decoration:none; padding:2px 8px;">
-          {{ label }} ↗
-        </a>
-      {% endfor %}
-    </div>
-    {% endif %}
-
-    {% for fname, label, kind in fields %}
-    <div class="field {{ kind }}">
-      {% if kind == "bool" %}
-        <label for="f{{ lidx }}_{{ fname }}" style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-          <input type="checkbox" name="listings.{{ lidx }}.{{ fname }}"
-                 id="f{{ lidx }}_{{ fname }}"
-                 {% if L.get(fname, True) %}checked{% endif %}
-                 style="width:auto; margin:0;">
-          <span>{{ label }}</span>
-        </label>
-      {% else %}
-        <label for="f{{ lidx }}_{{ fname }}">{{ label }}</label>
-        {% if kind == "textarea" %}
-          <textarea name="listings.{{ lidx }}.{{ fname }}"
-                    id="f{{ lidx }}_{{ fname }}">{{ L.get(fname, "") }}</textarea>
-        {% elif kind == "int" %}
-          <input type="number" name="listings.{{ lidx }}.{{ fname }}"
-                 id="f{{ lidx }}_{{ fname }}"
-                 value="{{ L.get(fname, '') }}">
-        {% elif kind == "url" %}
-          <input type="url" name="listings.{{ lidx }}.{{ fname }}"
-                 id="f{{ lidx }}_{{ fname }}"
-                 placeholder="https://..."
-                 value="{{ L.get(fname, '') }}">
-        {% else %}
-          <input type="text" name="listings.{{ lidx }}.{{ fname }}"
-                 id="f{{ lidx }}_{{ fname }}"
-                 value="{{ L.get(fname, '') }}">
+      <span class="quick-actions" onclick="event.stopPropagation()">
+        {% if lc == 'archive' %}
+          <form method="post" action="/listings/{{ lidx }}/lifecycle">
+            <input type="hidden" name="value" value="active">
+            <button type="submit" class="primary">↩ Restore</button>
+          </form>
+        {% elif lc == 'pause' %}
+          <form method="post" action="/listings/{{ lidx }}/lifecycle">
+            <input type="hidden" name="value" value="active">
+            <button type="submit">▶ Resume</button>
+          </form>
+          <form method="post" action="/listings/{{ lidx }}/lifecycle">
+            <input type="hidden" name="value" value="archive">
+            <button type="submit" class="danger">📦 Archive</button>
+          </form>
+        {% else %}{# active #}
+          <form method="post" action="/listings/{{ lidx }}/lifecycle">
+            <input type="hidden" name="value" value="pause">
+            <button type="submit">⏸ Pause</button>
+          </form>
+          <form method="post" action="/listings/{{ lidx }}/lifecycle">
+            <input type="hidden" name="value" value="archive">
+            <button type="submit" class="danger">📦 Archive</button>
+          </form>
         {% endif %}
-      {% endif %}
-    </div>
-    {% endfor %}
-  </div>
-{% endfor %}
+      </span>
+    </summary>
 
-  <div class="actions">
-    <button type="submit" class="primary">Save all</button>
-    <button type="submit" formaction="/listings/add" formmethod="post">+ Add new listing</button>
-  </div>
-</form>
+    <div class="form-area">
+      <form method="post" action="/listings/{{ lidx }}/save">
+        {% for fname, label, kind in fields %}
+        <div class="field {{ kind }}">
+          {% if kind == "bool" %}
+            <label for="f{{ lidx }}_{{ fname }}" style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+              <input type="checkbox" name="{{ fname }}"
+                     id="f{{ lidx }}_{{ fname }}"
+                     {% if L.get(fname, True) %}checked{% endif %}
+                     style="width:auto; margin:0;">
+              <span>{{ label }}</span>
+            </label>
+          {% else %}
+            <label for="f{{ lidx }}_{{ fname }}">{{ label }}</label>
+            {% if kind == "select" and fname == "lifecycle" %}
+              <select name="{{ fname }}" id="f{{ lidx }}_{{ fname }}">
+                {% for opt in lifecycle_choices %}
+                  <option value="{{ opt }}" {% if L._lifecycle == opt %}selected{% endif %}>{{ opt }}</option>
+                {% endfor %}
+              </select>
+            {% elif kind == "textarea" %}
+              <textarea name="{{ fname }}"
+                        id="f{{ lidx }}_{{ fname }}">{{ L.get(fname, "") }}</textarea>
+            {% elif kind == "int" %}
+              <input type="number" name="{{ fname }}"
+                     id="f{{ lidx }}_{{ fname }}"
+                     value="{{ L.get(fname, '') }}">
+            {% elif kind == "url" %}
+              <input type="url" name="{{ fname }}"
+                     id="f{{ lidx }}_{{ fname }}"
+                     placeholder="https://..."
+                     value="{{ L.get(fname, '') }}">
+            {% else %}
+              <input type="text" name="{{ fname }}"
+                     id="f{{ lidx }}_{{ fname }}"
+                     value="{{ L.get(fname, '') }}">
+            {% endif %}
+          {% endif %}
+        </div>
+        {% endfor %}
+
+        <div class="form-actions">
+          <button type="submit" class="primary">Save changes</button>
+          <label class="delete-toggle">
+            <input type="checkbox" name="__delete" value="1"> permanently delete on save
+          </label>
+        </div>
+      </form>
+    </div>
+  </details>
+{% endfor %}
 
 </body>
 </html>

@@ -37,14 +37,28 @@ def _normalize(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def _is_in_cycle(L: dict) -> bool:
+    """A listing participates in the cycle only when its lifecycle is 'active'.
+
+    'pause' and 'archive' both cause the matcher to skip. The legacy
+    `active: bool` field is honored for backward compat.
+    """
+    lc = (L.get("lifecycle") or "").strip().lower()
+    if lc:
+        return lc == "active"
+    if "active" in L:
+        return bool(L["active"])
+    return True  # default for entries with neither field
+
+
 def match_listing(thread_listing_title: str | None, listings: list[dict]) -> dict | None:
     """Match a thread to a listing.
 
-    Inactive listings (active=False) are skipped entirely — the matcher
-    behaves as if they don't exist, so polling those threads will fall
-    through to "no listing match" and skip.
+    Listings whose lifecycle is 'pause' or 'archive' are skipped — the
+    matcher behaves as if they don't exist, so threads about those
+    listings fall through to "no listing match" and the cycle skips.
     """
-    active_listings = [L for L in listings if L.get("active", True)]
+    active_listings = [L for L in listings if _is_in_cycle(L)]
     if not thread_listing_title:
         return active_listings[0] if len(active_listings) == 1 else None
     title_norm = _normalize(thread_listing_title)
