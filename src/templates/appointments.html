@@ -136,10 +136,20 @@
 
   <details>
     <summary>Notify {% if a.notifs %}({{ a.notifs|length }} sent){% endif %}</summary>
+    {% set contact = a.contact or {} %}
+    {% set tenant_phone = a.phone %}
+    {% set ct_phone = contact.phone %}
+    {% set ct_email = contact.email %}
+    {% set ct_name  = contact.name or "owner" %}
+    <div style="margin:0.4rem 0; color:#555; font-size:0.85rem;">
+      📇 Confirmation goes to <b>{{ ct_name }}</b>
+      {% if ct_phone %} · {{ ct_phone }}{% endif %}
+      {% if ct_email %} · {{ ct_email }}{% endif %}
+      {% if a.contact_channels %}
+        · prefers {{ a.contact_channels | join(", ") }}
+      {% endif %}
+    </div>
     <div class="notify-grid">
-      {% set tenant_phone = a.phone %}
-      {% set owner_phone = owner.phone %}
-      {% set owner_email = owner.email %}
       <form method="post" action="/appointments/{{ a.id }}/notify">
         <input type="hidden" name="channel" value="sms">
         <input type="hidden" name="recipient" value="tenant">
@@ -148,18 +158,18 @@
       <form method="post" action="/appointments/{{ a.id }}/notify">
         <input type="hidden" name="channel" value="sms">
         <input type="hidden" name="recipient" value="owner">
-        <button type="submit" {% if not owner_phone %}disabled title="Set owner.phone in config"{% endif %}>📱 SMS owner</button>
+        <button type="submit" {% if not ct_phone %}disabled title="No phone for {{ ct_name }}"{% endif %}>📱 SMS {{ ct_name.split()[0] }}</button>
       </form>
       <form method="post" action="/appointments/{{ a.id }}/notify">
         <input type="hidden" name="channel" value="email">
         <input type="hidden" name="recipient" value="owner">
-        <button type="submit" {% if not owner_email %}disabled title="Set owner.email in config"{% endif %}>✉️ Email owner</button>
+        <button type="submit" {% if not ct_email %}disabled title="No email for {{ ct_name }}"{% endif %}>✉️ Email {{ ct_name.split()[0] }}</button>
       </form>
       <form method="post" action="/appointments/{{ a.id }}/notify"
-            onsubmit="return confirm('Place a voice call to the owner with the appointment summary?')">
+            onsubmit="return confirm('Place a voice call to {{ ct_name }} with the appointment summary?')">
         <input type="hidden" name="channel" value="call">
         <input type="hidden" name="recipient" value="owner">
-        <button type="submit" class="call" {% if not owner_phone %}disabled{% endif %}>📞 Call owner</button>
+        <button type="submit" class="call" {% if not ct_phone %}disabled{% endif %}>📞 Call {{ ct_name.split()[0] }}</button>
       </form>
     </div>
     {% if a.notifs %}

@@ -16,3 +16,10 @@ listings:
     notes: |
       Quiet building, hardwood floors, recently renovated kitchen.
       Looking for non-smokers, income 3x rent, no evictions.
+
+    # Contact for appointment confirmations on THIS listing.
+    # Falls back to config.yaml `owner` block if any of these are unset.
+    contact_name: "Danny"
+    contact_email: "danny@example.com"
+    contact_phone: "+14088235141"
+    contact_preference: "sms,email"   # sms | email | call (comma-separated)

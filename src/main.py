@@ -16,23 +16,58 @@ _DATE_PATTERNS = [
 ]
 
 
+def _resolve_contact(cfg: "config.Config", listing_title: str | None) -> tuple[dict, list[str]]:
+    """Pick the right contact + channel set for an appointment.
+
+    1. Try to match the appointment's listing to one in listings.yaml.
+       If that listing has a `contact_*` block, use it.
+    2. Fall back to the global config.yaml `owner` block.
+
+    Returns (contact_dict, channels) where contact_dict has
+    {name, email, phone} and channels is the list of preferred channels
+    (e.g. ['sms', 'email']).
+    """
+    listing = classifier.match_listing(listing_title, cfg.listings) or {}
+
+    # Per-listing contact if available
+    has_listing_contact = any(
+        listing.get(k) for k in ("contact_name", "contact_email", "contact_phone")
+    )
+    if has_listing_contact:
+        contact = {
+            "name":  listing.get("contact_name"),
+            "email": listing.get("contact_email"),
+            "phone": listing.get("contact_phone"),
+        }
+        pref = (listing.get("contact_preference") or "sms,email").lower()
+        channels = [c.strip() for c in pref.split(",") if c.strip() in ("sms", "email", "call")]
+        return contact, channels or ["sms"]
+
+    # Fallback to global owner
+    owner = cfg.owner or {}
+    flags = owner.get("notify_on_create") or {}
+    channels = [ch for ch in ("sms", "email", "call") if flags.get(ch)]
+    return owner, channels
+
+
 def _auto_notify_owner(c, cfg: "config.Config", appt_id: int) -> None:
-    """Fire owner notifications per config.owner.notify_on_create."""
-    flags = (cfg.owner or {}).get("notify_on_create") or {}
-    if not any(flags.values()):
-        return
+    """Fire owner-side notifications when a viewing is booked.
+
+    Looks up the per-listing contact first; falls back to global owner.
+    """
     appt_row = db.get_appointment(c, appt_id)
     if not appt_row:
         return
     appt = dict(appt_row)
-    for channel in ("sms", "email", "call"):
-        if not flags.get(channel):
-            continue
+    contact, channels = _resolve_contact(cfg, appt.get("listing_title"))
+    if not channels:
+        return
+    for channel in channels:
         ok, detail, target = notifications.dispatch(
             channel=channel,
             recipient="owner",
             appt=appt,
-            owner=cfg.owner,
+            owner=contact,
         )
         db.log_notification(
             c,
@@ -41,7 +76,7 @@ def _auto_notify_owner(c, cfg: "config.Config", appt_id: int) -> None:
             recipient="owner",
             target=target,
             status="sent" if ok else "failed",
-            detail=detail,
+            detail=f"{contact.get('name') or '(no name)'} — {detail}",
         )
 
 

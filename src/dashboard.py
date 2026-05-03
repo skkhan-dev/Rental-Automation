@@ -51,6 +51,11 @@ _LISTING_FIELDS = [
     ("redirect_to", "If rented — redirect tenant to:", "textarea"),
     ("notes", "Notes (internal)", "textarea"),
     ("custom_instructions", "Custom instructions for THIS listing (overrides generic guidance)", "textarea"),
+    # ── Contact for appointment confirmations on THIS listing ──
+    ("contact_name", "Contact: name (notified when a viewing is booked)", "text"),
+    ("contact_email", "Contact: email", "text"),
+    ("contact_phone", "Contact: phone (E.164, e.g. +14087288083)", "text"),
+    ("contact_preference", "Contact: preference (sms | email | call — comma-separated for multiple)", "text"),
 ]
 
 LISTINGS_PATH = Path(__file__).resolve().parent.parent / "listings.yaml"
@@ -467,6 +472,7 @@ def appointments_view(
     status: Optional[str] = None,
     notified: Optional[str] = None,
 ):
+    from .main import _resolve_contact
     cfg = _config()
     valid = list(db.APPOINTMENT_STATUSES)
     status_filter = status if status in valid else None
@@ -482,6 +488,10 @@ def appointments_view(
             a["notifs"] = [
                 dict(r) for r in db.appointment_notifications(c, a["id"])
             ]
+            # Resolve which person/channels handle this appointment's listing
+            contact, channels = _resolve_contact(cfg, a.get("listing_title"))
+            a["contact"] = contact
+            a["contact_channels"] = channels
     grouped: dict[str, list[dict]] = {}
     for a in appts:
         key = a.get("when_date") or "Unscheduled / TBD"
@@ -524,17 +534,21 @@ def appointments_notify(
     channel: str = Form(...),       # sms | email | call
     recipient: str = Form(...),     # tenant | owner
 ):
+    from .main import _resolve_contact
     cfg = _config()
     with db.conn(config.DB_PATH) as c:
         appt_row = db.get_appointment(c, appt_id)
         if not appt_row:
             return RedirectResponse("/appointments?notified=missing", status_code=303)
         appt = dict(appt_row)
+        # Use per-listing contact if defined, else global owner
+        contact, _ = _resolve_contact(cfg, appt.get("listing_title"))
+        owner_for_dispatch = contact if recipient == "owner" else (cfg.owner or {})
         ok, detail, target = notifications.dispatch(
             channel=channel,
             recipient=recipient,
             appt=appt,
-            owner=cfg.owner,
+            owner=owner_for_dispatch,
         )
         db.log_notification(
             c,

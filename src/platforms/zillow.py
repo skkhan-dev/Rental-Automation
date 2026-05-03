@@ -26,6 +26,9 @@ from .base import InboundMessage
 INBOX_URL = "https://www.zillow.com/rental-manager/inbox/"
 LOGIN_URL = "https://www.zillow.com/"
 
+# Hard cap on threads opened per cycle so a long rail doesn't take 5 min.
+MAX_THREADS_PER_CYCLE = 25
+
 _THREAD_PATH_RE = re.compile(r"/rental-manager/inbox/([^/]+)/(\d+)")
 
 
@@ -103,21 +106,30 @@ class ZillowPlatform:
                 print("  no conversation-item found — inbox may be empty or DOM changed")
                 return [], 0
 
-            rows = page.locator('[data-testid="conversation-item"]').all()
-            print(f"  total threads in rail: {len(rows)}")
+            all_rows = page.locator('[data-testid="conversation-item"]').all()
+            print(f"  total threads in rail: {len(all_rows)}")
+
+            # Cap how many we visit per cycle so a long rail doesn't take forever
+            rows = all_rows[:MAX_THREADS_PER_CYCLE]
+            if len(rows) < len(all_rows):
+                print(f"  capping to top {len(rows)} most recent threads")
 
             results: list[InboundMessage] = []
-            unread_count = 0
+            scanned = 0
+            skipped_already_replied = 0
 
             for row in rows:
-                # Skip threads with no unread badge
-                if row.locator('[data-testid="unread-badge"]').count() == 0:
-                    continue
-                unread_count += 1
-
-                name, listing, _snippet = _row_meta(row)
+                name, listing, snippet = _row_meta(row)
                 if not name:
                     continue
+
+                # Cheap pre-filter: snippet starting with "You:" means the
+                # most recent message in the thread is FROM us — no point
+                # opening the thread, our reply IS the latest.
+                if snippet and snippet.lower().startswith("you:"):
+                    skipped_already_replied += 1
+                    continue
+                scanned += 1
 
                 # Capture URL before click so we can detect navigation completion
                 pre_url = page.url
@@ -139,9 +151,11 @@ class ZillowPlatform:
                     print(f"  could not parse thread_id from URL: {page.url}")
                     continue
 
-                # Read the latest bubble (oldest → newest in document order).
-                # Strip the leading sender-name line that Zillow includes inside
-                # each bubble (e.g. "Victor Adame\n\nI am interested in...").
+                # Find the latest INBOUND bubble (skipping our own outbound).
+                # Zillow prepends the sender's display name to every bubble,
+                # so a bubble starting with the counterparty name is inbound;
+                # anything else (typically starting with our name or "You")
+                # is outbound and we skip past it.
                 try:
                     bubbles = page.locator('[data-testid="interactive-chat-bubble"]').all()
                     body = None
@@ -149,11 +163,14 @@ class ZillowPlatform:
                         t = (b.inner_text() or "").strip()
                         if not t or len(t) >= 4000:
                             continue
-                        # Drop the first line if it equals the counterparty name
-                        # (Zillow prepends sender name inside each bubble).
                         lines = t.splitlines()
-                        if lines and name and lines[0].strip().lower() == name.lower():
-                            t = "\n".join(lines[1:]).strip()
+                        first = lines[0].strip().lower() if lines else ""
+                        if not name or first != name.lower():
+                            # Not from this prospect → it's our reply or another
+                            # actor's. Keep searching for an inbound bubble.
+                            continue
+                        # Strip the sender-name line and use the remainder.
+                        t = "\n".join(lines[1:]).strip()
                         if t:
                             body = t
                             break
@@ -162,7 +179,8 @@ class ZillowPlatform:
                     continue
 
                 if not body:
-                    print(f"  no body extracted for {name!r}")
+                    # No inbound message visible (we already replied to the
+                    # latest one) — nothing new to do on this thread.
                     continue
 
                 msg_id = f"zillow::{thread_id}::{hash(body) & 0xFFFFFFFF:x}"
@@ -177,8 +195,12 @@ class ZillowPlatform:
                     )
                 )
 
-            print(f"  {unread_count} unread thread(s); {len(results)} with readable body")
-            return results, len(rows)
+            print(
+                f"  scanned {scanned} threads, "
+                f"skipped {skipped_already_replied} already-replied, "
+                f"{len(results)} new inbound to handle"
+            )
+            return results, len(all_rows)
         finally:
             page.close()
 

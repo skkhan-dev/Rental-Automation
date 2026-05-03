@@ -25,6 +25,9 @@ from .base import InboundMessage
 INBOX_URL = "https://www.avail.com/app/landlords/units/61431973/listings"
 LOGIN_URL = "https://www.avail.com/"
 
+# Hard cap on threads opened per cycle so a long rail doesn't take 5 min.
+MAX_THREADS_PER_CYCLE = 25
+
 _DRAWER_BTN_NAME = re.compile(r"messages drawer", re.IGNORECASE)
 _UNREAD_BTN_NAME = re.compile(r"^unread\b", re.IGNORECASE)
 _REPLY_BOX_NAME = re.compile(r"^Type your message", re.IGNORECASE)
@@ -78,17 +81,17 @@ def _strip_trailing_timestamp(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _read_open_thread(page: Page) -> str | None:
-    """Return the latest inbound message body from the conversation pane.
+def _read_open_thread(page: Page, expected_initials: str | None = None) -> str | None:
+    """Return the latest INBOUND message body from the conversation pane.
 
     Avail renders each message bubble as a div containing
-    "<body>\n\n<HH:MM AM/PM>". The right pane lists bubbles oldest → newest;
-    the most recent inbound is therefore the LAST bubble in document order.
+    "<AVATAR_INITIALS>\n\n<body>\n\n<HH:MM AM/PM>" for inbound, and
+    bubbles without the avatar prefix for outbound (sender's own).
 
-    We deduplicate by text and exclude:
-      - The reply textbox / search box
-      - Rail rows (they contain 'Applicant |')
-      - Pure date headers ('Thu Apr 2, 2026')
+    If `expected_initials` is given (e.g. 'KH' for Karl Hudson), we only
+    return bubbles whose first line matches — that's the inbound signal.
+    Returns None when the latest message in the thread is outbound (we
+    already replied), so the caller can skip cleanly.
     """
     page.wait_for_timeout(1500)
     dialog = page.get_by_role("dialog")
@@ -96,8 +99,9 @@ def _read_open_thread(page: Page) -> str | None:
     BAD_FRAGMENTS = ("Applicant |", "Applicant\xa0|", "Type your message",
                      "Search conversations", "Select a conversation")
     DATE_HEADER_RE = re.compile(r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\w+\s+\d+", re.I)
+    INITIALS_RE = re.compile(r"^[A-Z]{1,3}$")
 
-    candidates: list[str] = []
+    candidates: list[tuple[bool, str]] = []  # (is_inbound, cleaned_body)
     seen: set[str] = set()
     for div in dialog.locator("div").all():
         try:
@@ -108,20 +112,31 @@ def _read_open_thread(page: Page) -> str | None:
             continue
         if any(b in t for b in BAD_FRAGMENTS):
             continue
-        if DATE_HEADER_RE.match(t.split("\n", 1)[0].strip()):
+        first_line = t.split("\n", 1)[0].strip()
+        if DATE_HEADER_RE.match(first_line):
             continue
         if t in seen:
             continue
         seen.add(t)
-        # Strip a trailing timestamp line if present
-        cleaned = _strip_trailing_timestamp(t)
+
+        # Inbound bubble starts with the prospect's avatar initials
+        is_inbound = bool(INITIALS_RE.match(first_line))
+        if expected_initials:
+            is_inbound = is_inbound and first_line == expected_initials
+
+        # Strip avatar line if present, then trailing timestamp
+        body_text = t
+        if INITIALS_RE.match(first_line):
+            body_text = t.split("\n", 1)[1] if "\n" in t else ""
+        cleaned = _strip_trailing_timestamp(body_text)
         if 20 < len(cleaned) < 4000:
-            candidates.append(cleaned)
+            candidates.append((is_inbound, cleaned))
 
     if not candidates:
         return None
-    # Last in document order = most recent message
-    return candidates[-1]
+    # Latest message wins; only return if it's inbound (prospect, not us)
+    is_inbound, body = candidates[-1]
+    return body if is_inbound else None
 
 
 class AvailPlatform:
@@ -155,18 +170,20 @@ class AvailPlatform:
                 print(f"  could not open drawer: {e}")
                 return [], 0
 
-            _filter_unread(page)
-
-            # Now scrape the unread threads from the rail
+            # Scan ALL threads (no Unread filter) — relies on inbound-direction
+            # detection in _read_open_thread to skip threads we've already
+            # replied to. DB-level msg_id dedup catches re-runs.
             results: list[InboundMessage] = []
             seen_names: set[str] = set()
             total_seen = 0
+            skipped_already_replied = 0
 
-            # The rail items are clickable rows whose first line is the
-            # counterparty name. Scope to the dialog and pull each row's text.
             dialog = page.get_by_role("dialog")
-            rows = dialog.locator("li, [role='listitem'], button:has(div):has(span)").all()
-            print(f"  drawer rail candidates: {len(rows)}")
+            all_rows = dialog.locator("li, [role='listitem'], button:has(div):has(span)").all()
+            print(f"  drawer rail candidates: {len(all_rows)}")
+            rows = all_rows[:MAX_THREADS_PER_CYCLE]
+            if len(rows) < len(all_rows):
+                print(f"  capping to top {len(rows)} most recent threads")
 
             for row in rows:
                 try:
@@ -182,7 +199,9 @@ class AvailPlatform:
                 if len(lines) < 3:
                     continue
                 # Avatar initials are typically 1-3 uppercase letters
+                initials = ""
                 if re.fullmatch(r"[A-Z]{1,3}", lines[0]):
+                    initials = lines[0]
                     name = lines[1]
                 else:
                     name = lines[0]
@@ -198,15 +217,18 @@ class AvailPlatform:
                         listing = ln.split("|", 1)[1].strip()
                         break
 
-                # Open this thread by clicking the row, then read the message
+                # Open this thread, read the latest INBOUND message only.
+                # _read_open_thread returns None if the thread's latest
+                # message is outbound (we already replied) — skip cleanly.
                 try:
                     row.click()
                     page.wait_for_timeout(2500)
-                    body = _read_open_thread(page)
+                    body = _read_open_thread(page, expected_initials=initials or None)
                 except Exception as e:
                     print(f"  read error on {name!r}: {e}")
                     continue
                 if not body:
+                    skipped_already_replied += 1
                     continue
 
                 # Synthetic stable thread ID (Avail has no URL per thread)
@@ -224,7 +246,11 @@ class AvailPlatform:
                     )
                 )
 
-            print(f"  scanned {total_seen} unread thread rows; {len(results)} with readable body")
+            print(
+                f"  scanned {total_seen} threads, "
+                f"skipped {skipped_already_replied} already-replied, "
+                f"{len(results)} new inbound to handle"
+            )
             return results, total_seen
         finally:
             page.close()
