@@ -508,16 +508,23 @@ def history_clear(scope: str = Form("all")):
 @app.get("/config", response_class=HTMLResponse)
 def config_view(request: Request, saved: int = 0):
     raw = yaml.safe_load(CONFIG_PATH.read_text()) or {}
-    # Build per-platform enabled map for the template, falling back to each
-    # platform's code-side default if absent from config.yaml.
     cfg_platforms = (raw.get("platforms") or {})
+    cfg_intervals = (raw.get("platform_intervals") or {})
+    sched = raw.get("schedule") or {}
+    default_min = int(sched.get("min_interval_seconds", 1200))
+    default_max = int(sched.get("max_interval_seconds", 3000))
     platform_states = []
     for name, p in platforms.REGISTRY.items():
+        override = cfg_intervals.get(name) or []
+        has_override = isinstance(override, list) and len(override) == 2
         platform_states.append({
             "name": name,
             "enabled": cfg_platforms.get(name, getattr(p, "enabled", True)),
             "code_default": getattr(p, "enabled", True),
             "inbox_url": getattr(p, "inbox_url", ""),
+            "interval_min": int(override[0]) if has_override else default_min,
+            "interval_max": int(override[1]) if has_override else default_max,
+            "uses_override": has_override,
         })
     return templates.TemplateResponse(
         "config.html",
@@ -545,8 +552,19 @@ async def config_save(request: Request):
 
     # Per-platform enabled toggles. Form sends `platform_<name>` (checkbox).
     platforms_enabled = {}
+    platform_intervals = {}
     for name in platforms.REGISTRY.keys():
         platforms_enabled[name] = form.get(f"platform_{name}") == "on"
+        # Per-platform interval override (only saved if explicitly set)
+        use_override = form.get(f"platform_{name}_use_override") == "on"
+        if use_override:
+            try:
+                lo = int(form.get(f"platform_{name}_min", "").strip())
+                hi = int(form.get(f"platform_{name}_max", "").strip())
+                if lo > 0 and hi > 0:
+                    platform_intervals[name] = [min(lo, hi), max(lo, hi)]
+            except (TypeError, ValueError):
+                pass
 
     new_cfg = {
         "poll_interval_seconds": _ival("poll_interval_seconds", 180),
@@ -569,6 +587,7 @@ async def config_save(request: Request):
             "max_interval_seconds": max(60, _ival("max_interval_seconds", 3000)),
         },
         "platforms": platforms_enabled,
+        "platform_intervals": platform_intervals,
     }
     # Sanity: enforce min <= max for the random interval
     sched = new_cfg["schedule"]

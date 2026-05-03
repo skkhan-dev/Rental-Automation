@@ -25,6 +25,11 @@ class Config:
     platforms_enabled: dict[str, bool]
     # Owner / property manager (for appointment notifications)
     owner: dict
+    # Global schedule (window + default interval) — also read by the launchd wrapper
+    schedule: dict
+    # Per-platform interval override:  {"zillow": [600, 1800], "avail": [1800, 3600]}
+    # Each value is [min_seconds, max_seconds]; missing platforms use the global default.
+    platform_intervals: dict
 
 
 def load() -> Config:
@@ -59,4 +64,6 @@ def load() -> Config:
         guidelines=guidelines,
         listings=listings_doc["listings"],
         owner=cfg.get("owner") or {},
+        schedule=cfg.get("schedule") or {},
+        platform_intervals=cfg.get("platform_intervals") or {},
     )

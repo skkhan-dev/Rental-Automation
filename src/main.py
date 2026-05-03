@@ -80,6 +80,55 @@ def _auto_notify_owner(c, cfg: "config.Config", appt_id: int) -> None:
         )
 
 
+def _platform_interval(name: str, cfg: "config.Config") -> tuple[int, int]:
+    """Return (min_s, max_s) for the platform's polling interval.
+
+    Falls back to the global schedule's min/max if the platform doesn't
+    appear in cfg.platform_intervals.
+    """
+    overrides = cfg.platform_intervals or {}
+    v = overrides.get(name)
+    if isinstance(v, list) and len(v) == 2:
+        try:
+            return int(v[0]), int(v[1])
+        except (TypeError, ValueError):
+            pass
+    sched = cfg.schedule or {}
+    return (
+        int(sched.get("min_interval_seconds", 1200)),
+        int(sched.get("max_interval_seconds", 3000)),
+    )
+
+
+def _platform_next_run_path(name: str):
+    return config.DATA_DIR / f"next_run_{name}.txt"
+
+
+def _platform_due(name: str) -> bool:
+    """True if this platform's interval has elapsed (or never run)."""
+    p = _platform_next_run_path(name)
+    if not p.exists():
+        return True
+    try:
+        next_ts = int(p.read_text().strip())
+    except Exception:
+        return True
+    return time.time() >= next_ts
+
+
+def _platform_schedule_next(name: str, cfg: "config.Config") -> int:
+    """Pick a random next-run timestamp inside the platform's interval window."""
+    lo, hi = _platform_interval(name, cfg)
+    if hi < lo:
+        lo, hi = hi, lo
+    delay = random.randint(max(1, lo), max(1, hi))
+    next_ts = int(time.time()) + delay
+    p = _platform_next_run_path(name)
+    p.parent.mkdir(exist_ok=True)
+    p.write_text(str(next_ts))
+    return next_ts
+
+
 def _parse_iso_date(s: str | None) -> str | None:
     if not s:
         return None
@@ -186,10 +235,23 @@ def run(once: bool):
 
     while True:
         for platform in platforms.enabled_platforms():
+            if not _platform_due(platform.name):
+                lo, hi = _platform_interval(platform.name, cfg)
+                next_ts = _platform_next_run_path(platform.name).read_text().strip()
+                wait_s = max(0, int(next_ts) - int(time.time()))
+                click.echo(
+                    f"\n=== {platform.name} skipped (interval {lo}-{hi}s; "
+                    f"next due in {wait_s}s) ==="
+                )
+                continue
             try:
                 _cycle(platform, cfg, client)
             except Exception as e:
                 click.echo(f"[{platform.name} cycle error] {e}")
+            finally:
+                # Schedule next run regardless of success — failures shouldn't
+                # cause us to retry every fire and burn through the API.
+                _platform_schedule_next(platform.name, cfg)
 
         if once:
             break
