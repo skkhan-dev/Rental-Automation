@@ -8,6 +8,58 @@ from typing import Protocol
 from playwright.sync_api import BrowserContext, Page
 
 
+class BotChallengeDetected(Exception):
+    """Raised when poll_inbox detects an anti-bot challenge (login wall,
+    Cloudflare 'verify you are human', FB PIN prompt, etc).
+
+    The cycle catches this specifically and fires a notification rather
+    than treating it as a generic failure."""
+    pass
+
+
+# Heuristic patterns for bot challenges across all three platforms.
+_CHALLENGE_URL_PATTERNS = (
+    "/login", "/sign_in", "/signin", "/checkpoint", "/challenge",
+    "/captcha", "/verify", "/zsignin",
+)
+_CHALLENGE_TITLE_PATTERNS = (
+    "verify", "security check", "just a moment", "challenge",
+    "captcha", "log in", "sign in", "checkpoint",
+)
+_CHALLENGE_TEXT_PATTERNS = (
+    "verify you are human", "press and hold", "let's confirm",
+    "are you a robot", "checking your browser", "we'll text you a code",
+    "enter the code we sent", "two-factor", "2-step verification",
+    "complete this challenge",
+)
+
+
+def detect_challenge(page: Page) -> str | None:
+    """Return a short description of the bot challenge, or None if clear."""
+    try:
+        url = (page.url or "").lower()
+        for pat in _CHALLENGE_URL_PATTERNS:
+            if pat in url:
+                return f"URL suggests challenge ({url[:80]})"
+    except Exception:
+        pass
+    try:
+        title = (page.title() or "").lower()
+        for pat in _CHALLENGE_TITLE_PATTERNS:
+            if pat in title:
+                return f"page title: {title[:80]!r}"
+    except Exception:
+        pass
+    try:
+        body = (page.locator("body").inner_text() or "")[:2000].lower()
+        for pat in _CHALLENGE_TEXT_PATTERNS:
+            if pat in body:
+                return f"page text contains {pat!r}"
+    except Exception:
+        pass
+    return None
+
+
 @dataclass
 class InboundMessage:
     """One unread message picked up from a platform's inbox."""

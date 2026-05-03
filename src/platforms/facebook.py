@@ -14,7 +14,7 @@ import time
 
 from playwright.sync_api import BrowserContext, Page, TimeoutError as PWTimeout
 
-from .base import InboundMessage
+from .base import BotChallengeDetected, InboundMessage, detect_challenge
 
 INBOX_URL = "https://www.messenger.com/marketplace"
 THREAD_URL = "https://www.messenger.com/marketplace/t/{tid}/"
@@ -109,10 +109,9 @@ class FacebookPlatform:
             except Exception:
                 pass
 
-            if "login" in page.url.lower():
-                raise RuntimeError(
-                    "Not logged in to Facebook. Run `python -m src.main login` first."
-                )
+            challenge = detect_challenge(page)
+            if challenge:
+                raise BotChallengeDetected(f"facebook: {challenge}")
 
             print(f"  inbox url: {page.url}")
             threads = _scan_inbox(page)

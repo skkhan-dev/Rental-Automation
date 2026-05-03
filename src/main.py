@@ -210,7 +210,21 @@ def _cycle(platform: platforms.Platform, cfg: config.Config, client: anthropic.A
 
     try:
         with browser.context(headless=False) as ctx, db.conn(config.DB_PATH) as c:
-            inbound_all, threads_scanned = platform.poll_inbox(ctx)
+            try:
+                inbound_all, threads_scanned = platform.poll_inbox(ctx)
+            except platforms.BotChallengeDetected as bc:
+                # Pause this platform's cycle, page the user, exit cleanly.
+                error_msg = f"bot_challenge: {bc}"
+                click.echo(f"  🚨 {error_msg}")
+                notifier.notify_bot_challenge(platform.name, str(bc), owner=cfg.owner)
+                with db.conn(config.DB_PATH) as c2:
+                    db.cycle_end(
+                        c2, cycle_id, status="failure",
+                        threads_scanned=0, unread_found=0,
+                        replies_sent=0, replies_queued=0,
+                        error_msg=error_msg,
+                    )
+                return  # done with this platform's cycle
             unread_found = len(inbound_all)
             click.echo(f"found {len(inbound_all)} unread inbound messages")
             inbound = inbound_all[: cfg.cycle_cap]

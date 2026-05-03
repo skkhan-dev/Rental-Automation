@@ -18,7 +18,7 @@ import time
 
 from playwright.sync_api import BrowserContext, Page, TimeoutError as PWTimeout
 
-from .base import InboundMessage
+from .base import BotChallengeDetected, InboundMessage, detect_challenge
 
 # Any landlord-side URL that has the messages drawer button works as a starting
 # point. Pick a unit page (the drawer button shows on every unit screen).
@@ -157,11 +157,9 @@ class AvailPlatform:
                 pass
             page.wait_for_timeout(5000)
 
-            if "sign_in" in page.url or "login" in page.url.lower():
-                raise RuntimeError(
-                    "Not logged in to Avail. Run "
-                    "`python -m src.main login --platform avail` first."
-                )
+            challenge = detect_challenge(page)
+            if challenge:
+                raise BotChallengeDetected(f"avail: {challenge}")
 
             print(f"  inbox url: {page.url}")
             try:

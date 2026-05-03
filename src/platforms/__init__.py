@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from .avail import AvailPlatform
-from .base import InboundMessage, Platform
+from .base import BotChallengeDetected, InboundMessage, Platform, detect_challenge
 from .facebook import FacebookPlatform
 from .zillow import ZillowPlatform
 
@@ -41,4 +41,7 @@ def enabled_platforms() -> list[Platform]:
     ]
 
 
-__all__ = ["InboundMessage", "Platform", "REGISTRY", "get", "enabled_platforms"]
+__all__ = [
+    "InboundMessage", "Platform", "REGISTRY", "get", "enabled_platforms",
+    "BotChallengeDetected", "detect_challenge",
+]

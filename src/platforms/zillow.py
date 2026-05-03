@@ -21,7 +21,7 @@ import time
 
 from playwright.sync_api import BrowserContext, Page, TimeoutError as PWTimeout
 
-from .base import InboundMessage
+from .base import BotChallengeDetected, InboundMessage, detect_challenge
 
 INBOX_URL = "https://www.zillow.com/rental-manager/inbox/"
 LOGIN_URL = "https://www.zillow.com/"
@@ -88,11 +88,9 @@ class ZillowPlatform:
                 pass
             page.wait_for_timeout(6000)
 
-            if "login" in page.url.lower() or "zsignin" in page.url.lower():
-                raise RuntimeError(
-                    "Not logged in to Zillow. Run "
-                    "`python -m src.main login --platform zillow` first."
-                )
+            challenge = detect_challenge(page)
+            if challenge:
+                raise BotChallengeDetected(f"zillow: {challenge}")
 
             # Cache inbox_id for open_thread later.
             inbox_id, _ = _parse_thread_id(page.url)
