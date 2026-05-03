@@ -34,7 +34,8 @@ _cfg: config.Config | None = None
 
 # Field schema for the listings editor — order, label, kind
 _LISTING_FIELDS = [
-    ("title_match", "Title match (substring of FB listing title)", "text"),
+    ("active", "Active (uncheck to archive — skipped from matching/replies)", "bool"),
+    ("title_match", "Title match (substring of the listing title across platforms)", "text"),
     ("status", "Status (available / rented)", "text"),
     ("name", "Display name", "text"),
     ("address", "Address", "text"),
@@ -51,6 +52,10 @@ _LISTING_FIELDS = [
     ("redirect_to", "If rented — redirect tenant to:", "textarea"),
     ("notes", "Notes (internal)", "textarea"),
     ("custom_instructions", "Custom instructions for THIS listing (overrides generic guidance)", "textarea"),
+    # ── Listing URLs per platform ──
+    ("fb_url", "Facebook Marketplace URL", "url"),
+    ("avail_url", "Avail.com URL", "url"),
+    ("zillow_url", "Zillow Rental Manager URL", "url"),
     # ── Contact for appointment confirmations on THIS listing ──
     ("contact_name", "Contact: name (notified when a viewing is booked)", "text"),
     ("contact_email", "Contact: email", "text"),
@@ -217,6 +222,10 @@ async def listings_save(request: Request):
             continue
         cleaned = {}
         for fname, _label, kind in _LISTING_FIELDS:
+            if kind == "bool":
+                # Checkbox sends "on" when checked; nothing when unchecked.
+                cleaned[fname] = entry.get(fname) == "on"
+                continue
             raw = entry.get(fname, "").strip()
             if not raw:
                 continue
@@ -227,7 +236,9 @@ async def listings_save(request: Request):
                     cleaned[fname] = raw
             else:
                 cleaned[fname] = raw
-        if cleaned:
+        # Default new listings to active=True if user didn't toggle it
+        cleaned.setdefault("active", True)
+        if cleaned.get("title_match") or cleaned.get("name"):
             new_listings.append(cleaned)
 
     LISTINGS_PATH.write_text(

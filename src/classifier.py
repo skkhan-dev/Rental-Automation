@@ -38,14 +38,21 @@ def _normalize(s: str) -> str:
 
 
 def match_listing(thread_listing_title: str | None, listings: list[dict]) -> dict | None:
+    """Match a thread to a listing.
+
+    Inactive listings (active=False) are skipped entirely — the matcher
+    behaves as if they don't exist, so polling those threads will fall
+    through to "no listing match" and skip.
+    """
+    active_listings = [L for L in listings if L.get("active", True)]
     if not thread_listing_title:
-        return listings[0] if len(listings) == 1 else None
+        return active_listings[0] if len(active_listings) == 1 else None
     title_norm = _normalize(thread_listing_title)
-    for L in listings:
+    for L in active_listings:
         match_norm = _normalize(L.get("title_match", ""))
         if match_norm and match_norm in title_norm:
             return L
-    return listings[0] if len(listings) == 1 else None
+    return active_listings[0] if len(active_listings) == 1 else None
 
 
 def should_auto_send(cfg: Config, inbound_body: str, draft_body: str) -> tuple[bool, str]:

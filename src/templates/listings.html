@@ -29,6 +29,12 @@
   .page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
   .page-head h1 { margin: 0; }
   .add-top { margin: 0; }
+  .platform { display: inline-block; border-radius: 3px; font-size: 0.78rem; font-weight: 500; }
+  .platform.facebook { background: #e7f0fe; color: #1a4ea0; }
+  .platform.avail    { background: #e8f5e9; color: #1b5e20; }
+  .platform.zillow   { background: #fff3e0; color: #b25800; }
+  .field.bool input { margin: 0 !important; }
+  .field.url input { font-family: ui-monospace, monospace; font-size: 0.85rem; }
 </style>
 </head>
 <body>
@@ -55,29 +61,66 @@
 <form method="post" action="/listings/save">
 {% for L in listings %}
   {% set lidx = loop.index0 %}
-  <div class="listing">
+  {% set is_active = L.get("active", True) %}
+  <div class="listing" style="{% if not is_active %}opacity:0.55;{% endif %}">
     <h2>
       {{ L.name or L.title_match or "(unnamed)" }}
-      <span style="font-weight:normal; color:#888; font-size:0.85rem;">— {{ L.status or "available" }}</span>
+      <span style="font-weight:normal; color:#888; font-size:0.85rem;">
+        — {{ L.status or "available" }}
+        {% if not is_active %} · <b style="color:#888">ARCHIVED</b>{% endif %}
+      </span>
       <label class="delete-toggle">
         <input type="checkbox" name="listings.{{ lidx }}.__delete" value="1"> delete on save
       </label>
     </h2>
 
+    {# Quick links to the listing on each platform #}
+    {% set links = [] %}
+    {% if L.fb_url %}{% set _ = links.append(("Facebook", L.fb_url, "facebook")) %}{% endif %}
+    {% if L.avail_url %}{% set _ = links.append(("Avail", L.avail_url, "avail")) %}{% endif %}
+    {% if L.zillow_url %}{% set _ = links.append(("Zillow", L.zillow_url, "zillow")) %}{% endif %}
+    {% if links %}
+    <div style="margin: 0.4rem 0 0.6rem; font-size: 0.85rem;">
+      Live on:
+      {% for label, url, cls in links %}
+        <a href="{{ url }}" target="_blank" rel="noopener"
+           class="platform {{ cls }}"
+           style="margin-right:0.35rem; text-decoration:none; padding:2px 8px;">
+          {{ label }} ↗
+        </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     {% for fname, label, kind in fields %}
     <div class="field {{ kind }}">
-      <label for="f{{ lidx }}_{{ fname }}">{{ label }}</label>
-      {% if kind == "textarea" %}
-        <textarea name="listings.{{ lidx }}.{{ fname }}"
-                  id="f{{ lidx }}_{{ fname }}">{{ L.get(fname, "") }}</textarea>
-      {% elif kind == "int" %}
-        <input type="number" name="listings.{{ lidx }}.{{ fname }}"
-               id="f{{ lidx }}_{{ fname }}"
-               value="{{ L.get(fname, '') }}">
+      {% if kind == "bool" %}
+        <label for="f{{ lidx }}_{{ fname }}" style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" name="listings.{{ lidx }}.{{ fname }}"
+                 id="f{{ lidx }}_{{ fname }}"
+                 {% if L.get(fname, True) %}checked{% endif %}
+                 style="width:auto; margin:0;">
+          <span>{{ label }}</span>
+        </label>
       {% else %}
-        <input type="text" name="listings.{{ lidx }}.{{ fname }}"
-               id="f{{ lidx }}_{{ fname }}"
-               value="{{ L.get(fname, '') }}">
+        <label for="f{{ lidx }}_{{ fname }}">{{ label }}</label>
+        {% if kind == "textarea" %}
+          <textarea name="listings.{{ lidx }}.{{ fname }}"
+                    id="f{{ lidx }}_{{ fname }}">{{ L.get(fname, "") }}</textarea>
+        {% elif kind == "int" %}
+          <input type="number" name="listings.{{ lidx }}.{{ fname }}"
+                 id="f{{ lidx }}_{{ fname }}"
+                 value="{{ L.get(fname, '') }}">
+        {% elif kind == "url" %}
+          <input type="url" name="listings.{{ lidx }}.{{ fname }}"
+                 id="f{{ lidx }}_{{ fname }}"
+                 placeholder="https://..."
+                 value="{{ L.get(fname, '') }}">
+        {% else %}
+          <input type="text" name="listings.{{ lidx }}.{{ fname }}"
+                 id="f{{ lidx }}_{{ fname }}"
+                 value="{{ L.get(fname, '') }}">
+        {% endif %}
       {% endif %}
     </div>
     {% endfor %}
