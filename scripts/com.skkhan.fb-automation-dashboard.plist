@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.skkhan.fb-automation-dashboard</string>
+
+    <!-- Use the venv's python so dependencies resolve -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/skkhan/workarea/Facebook-Automation/.venv/bin/python</string>
+        <string>-m</string>
+        <string>src.main</string>
+        <string>dashboard</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/skkhan/workarea/Facebook-Automation</string>
+
+    <!-- Launch immediately when loaded, and on every user login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart whenever the process exits, regardless of reason -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- If it's crash-looping, wait at least this long before restarting -->
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/skkhan/workarea/Facebook-Automation/logs/dashboard.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/skkhan/workarea/Facebook-Automation/logs/dashboard.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/skkhan/workarea/Facebook-Automation/.venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
