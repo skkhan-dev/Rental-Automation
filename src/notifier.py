@@ -53,13 +53,19 @@ def strip_marker(reply_text: str) -> str:
     return "\n".join(line for line in cleaned.splitlines() if line.strip()) + "\n"
 
 
+def _applescript_escape(s: str) -> str:
+    """Escape a string for use inside AppleScript double-quotes."""
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ").replace("\r", " ")
+
+
 def _macos_notify(title: str, body: str) -> None:
     """Pop a banner on the user's Mac. Best-effort; silent on failure."""
     try:
-        # Use osascript with safely-quoted args
+        body_q = _applescript_escape(body)
+        title_q = _applescript_escape(title)
         script = (
-            f'display notification {shlex.quote(body)} '
-            f'with title {shlex.quote(title)} sound name "Submarine"'
+            f'display notification "{body_q}" '
+            f'with title "{title_q}" sound name "Submarine"'
         )
         subprocess.run(["osascript", "-e", script], check=False, timeout=5)
     except Exception:
