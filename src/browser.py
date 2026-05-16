@@ -1,6 +1,17 @@
 """Persistent Playwright context. First run requires you to log into each
 platform manually in the launched window; cookies persist in
-data/browser_profile."""
+data/browser_profile.
+
+We use `channel="chrome"` — the real Google Chrome binary, not Playwright's
+bundled Chromium for Testing. That gives us:
+  - A matching TLS fingerprint (JA3) that Cloudflare/PerimeterX expect
+  - Real Widevine, codec support, and Google components
+  - The same User-Agent string a normal user would send (so we DON'T
+    override user_agent — Chrome handles it)
+
+If Chrome isn't installed, launch raises and the cycle records a failure.
+On macOS the install path is /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+"""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -8,11 +19,6 @@ from contextlib import contextmanager
 from playwright.sync_api import BrowserContext, sync_playwright
 
 from .config import PROFILE_DIR
-
-USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-)
 
 # Minimal stealth: patch the most obvious headless/automation tells before
 # any page script runs. This isn't a full bypass — Cloudflare etc. will still
@@ -53,7 +59,7 @@ def context(headless: bool = False):
         ctx: BrowserContext = p.chromium.launch_persistent_context(
             user_data_dir=str(PROFILE_DIR),
             headless=headless,
-            user_agent=USER_AGENT,
+            channel="chrome",                    # ← real Chrome, not Chromium-for-Testing
             viewport={"width": 1280, "height": 900},
             locale="en-US",
             args=LAUNCH_ARGS,
